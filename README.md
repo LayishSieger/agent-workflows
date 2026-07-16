@@ -3,7 +3,7 @@
 **Status: v0.1** — init + contracts only. Not a full autonomous runner yet.
 
 Shared workflows and skills for coding agents (Cursor, Claude Code, Grok Build, Codex, …).  
-This hub is the source of truth; agents consume skills via install (and later harness plugins).
+Install the skill pack; agents use what ships **inside the skill** (no extra hub checkout required at runtime).
 
 ## Mental model
 
@@ -16,20 +16,22 @@ later CLI / plugins read that layout and run unattended loops
 
 | Layer | Role |
 |-------|------|
-| This repo | Skills + templates + design |
-| `~/.agents/skills` | Where installed skills live for agents |
+| This repo | Publishes skill packages (source) |
+| Install target (e.g. `~/.agents/skills`) | Full skill directory after install |
 | Each product repo | Thin runtime + policy docs after `/init-workflows` |
 
 ### What `/init-workflows` does
 
 One skill. **Every time it runs**, it:
 
-1. Audits a fixed checklist (concrete paths — not a “initialized” stamp)
-2. Reports present / missing / drifted
-3. Creates only what is missing; confirms before overwriting user-edited policy docs
-4. Ends with ready vs still missing X
+1. **Audits** a fixed checklist (concrete paths — not an “initialized” stamp)
+2. Reports present / missing / drift
+3. **Repairs** gaps (confirm before writing policy docs)
+4. **Re-audits** on disk and reports READY | NOT READY
 
 It does **not** implement issues, drain queues, or spawn workers. That is a later release.
+
+Everything the skill needs (checklist, interview, seeds, progress template, gitignore snippet) lives **in the skill folder** and is installed with it.
 
 ### Product runtime (`.agent-workflows/`)
 
@@ -52,7 +54,7 @@ npx skills add ~/projects/agent-workflows
 # or: npx skills add ./   from inside this repo
 ```
 
-That should place `init-workflows` under `~/.agents/skills` (exact CLI may vary by `skills` package version).
+That should place the full `init-workflows` skill directory under `~/.agents/skills` (exact CLI may vary).
 
 Later (public):
 
@@ -70,8 +72,8 @@ In any product repository, in your agent chat:
 /init-workflows
 ```
 
-- **Existing repo** with `docs/agents/*` already set up: audit + fill only gaps (progress, logs, gitignore).
-- **Greenfield**: interactive questions (issue tracker → labels → domain), then write files.
+- **Existing repo** with `docs/agents/*` already set up: audit + fill only runtime gaps (progress, logs, gitignore).
+- **Greenfield**: interactive questions (issue tracker → labels → domain), confirm drafts, then write.
 
 Dogfood order: a real product first, then a tiny greenfield.
 
@@ -81,14 +83,19 @@ Dogfood order: a real product first, then a tiny greenfield.
 agent-workflows/
   README.md
   CHANGELOG.md
-  LICENSE                 # MIT
-  docs/v0.1.md            # design freeze
+  LICENSE
+  docs/v0.1.md
   skills/
-    init-workflows/
+    init-workflows/          # entire skill package (install unit)
       SKILL.md
-  templates/
-    agent-workflows/      # progress template, gitignore snippet
-    docs/agents/          # policy doc seeds
+      checklist.md
+      overwrite-policy.md
+      greenfield-interview.md
+      progress.template.md
+      gitignore.snippet
+      issue-tracker-*.md
+      triage-labels.md
+      domain.md
 ```
 
 ## Out of scope for v0.1

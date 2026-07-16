@@ -4,6 +4,12 @@
 
 ### Added
 
-- Hub scaffold: README, MIT license, templates, design notes
-- Skill: `init-workflows` (re-entrant audit + repair of product contracts)
-- Templates for `docs/agents/*`, `.agent-workflows/progress.md`, gitignore snippet
+- Hub scaffold: README, MIT license, design notes
+- Skill package `init-workflows` (self-contained install unit):
+  - User-invoked; short description; steps with completion criteria
+  - Disclosed siblings: checklist, overwrite policy, greenfield interview, seeds
+  - No hub checkout required after install
+
+### Changed
+
+- Moved all seeds/templates into `skills/init-workflows/` (removed top-level `templates/`)
