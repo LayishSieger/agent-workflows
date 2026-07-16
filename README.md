@@ -86,14 +86,11 @@ agent-workflows/
   LICENSE
   docs/v0.1.md
   skills/
-    init-workflows/          # entire skill package (install unit)
-      SKILL.md
-      checklist.md
-      overwrite-policy.md
-      greenfield-interview.md
-      progress.template.md
-      gitignore.snippet
-      issue-tracker-*.md
+    init-workflows/          # install unit (Matt-shaped: process + seeds)
+      SKILL.md               # audit → interview → write → runtime → re-audit
+      progress.template.md   # runtime seed
+      issue-tracker-github.md
+      issue-tracker-local.md
       triage-labels.md
       domain.md
 ```

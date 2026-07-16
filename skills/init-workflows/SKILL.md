@@ -8,66 +8,116 @@ disable-model-invocation: true
 
 **Ensure** this product repo meets agent-workflows contracts. Every run is a full **audit**, then **repair** of gaps only. Do not trust marker files or prior "initialized" claims.
 
+This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
+
 **Out of scope:** implementing features, draining issue queues, runners, secrets.
 
-**Leading words:** *ensure* (goal), *audit* (measure), *repair* (fix gaps).
+All seeds ship **in this skill directory**. Never require a separate hub checkout.
 
-All seeds and rules ship **in this skill directory**. Read sibling files when a step points at them. Never require a separate hub checkout.
+## Process
 
-## Steps
+### 1. Explore
 
-### 1. Locate product root
+Locate product root (`git rev-parse --show-toplevel` or workspace root). If the cwd is only this skill package, ask which product repo to ensure.
 
-- Resolve git root: `git rev-parse --show-toplevel` (or workspace root if not a git repo).
-- Note `git remote -v` when present (informs defaults later).
-- Work only on the **product** the user has open. If the cwd is only this skill package itself, stop and ask which product repo to ensure.
+Read whatever exists; don't assume:
 
-**Done when:** product root path is known and stated to the user.
+- `git remote -v` — GitHub? other?
+- `docs/agents/issue-tracker.md`, `triage-labels.md`, `domain.md` — present and non-empty?
+- `.agent-workflows/progress.md`, `.agent-workflows/logs/`
+- `.gitignore` — has agent-workflows ignore lines? (see step 5)
+- `AGENTS.md` / `CLAUDE.md` — optional pointer only
+- `.scratch/` — hint of local-markdown issues
 
-### 2. Audit
+### 2. Audit and present
 
-Read [checklist.md](checklist.md). For every row, status is **present** | **missing** | **drift** (exists but empty or fails "ready when").
+Status each checklist row: **present** | **missing** | **drift** (exists but empty / fails ready-when). Print the table **before** any writes.
 
-Print the full audit table **before** any writes.
+| # | Artifact | Ready when |
+|---|----------|------------|
+| 1 | `docs/agents/issue-tracker.md` | File exists and is non-empty |
+| 2 | `docs/agents/triage-labels.md` | File exists and is non-empty |
+| 3 | `docs/agents/domain.md` | File exists and is non-empty |
+| 4 | `.agent-workflows/progress.md` | File exists |
+| 5 | `.agent-workflows/logs/` | Directory exists (prefer `.gitkeep` inside) |
+| 6 | `.gitignore` | Contains the four agent-workflows runtime lines (step 5) |
 
-**Done when:** every checklist row has a status and the table was shown.
+AGENTS.md / CLAUDE.md is **not** required for READY.
 
-### 3. Interview missing policy (branch)
+**Done when:** full table shown with a status on every row.
 
-If checklist items 1–3 are **all present**, skip to step 4.
+### 3. Present findings and ask (missing policy only)
 
-If any of 1–3 are **missing**, follow [greenfield-interview.md](greenfield-interview.md) for **only** the missing pieces — one decision at a time. Build drafts in memory; **do not write files yet**.
+If items 1–3 are **all present**, skip to step 4 (no interview).
 
-**Done when:** every missing policy file has a confirmed draft (user said the draft is OK), or user aborted that piece.
+If any of 1–3 are **missing**, walk **only those** decisions **one at a time** — explainer → options → user answer → next. Don't dump all three at once. Assume the user may not know the terms. Build drafts; **do not write files yet**.
 
-### 4. Confirm drafts then write policy
+#### Section A — Issue tracker (if missing)
 
-For each **new** policy file from step 3:
+> Explainer: The issue tracker is where work tickets live. Skills that create or triage issues need to know whether to call `gh`, write markdown under `.scratch/`, or follow another system.
 
-1. Show the full draft once more.
-2. Write only after explicit confirm.
-3. Destination names: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`.
+Default: GitHub if `origin` looks like GitHub; otherwise local markdown.
 
-For an **existing** policy file that is drift (empty): show a proposed fill from the matching seed; write only on confirm. Never overwrite non-empty policy without confirm + clear intent to replace.
+Options:
 
-Seeds live beside this skill:
+- **GitHub** — Issues via `gh` CLI
+- **Local markdown** — files under `.scratch/` (or a path the user names)
+- **Other** — user describes the workflow in one paragraph
 
-- [issue-tracker-github.md](issue-tracker-github.md)
-- [issue-tracker-local.md](issue-tracker-local.md)
-- [triage-labels.md](triage-labels.md)
-- [domain.md](domain.md)
+If GitHub: ask whether **external PRs** are a triage surface (default **no**).
 
-**Done when:** every policy file that was missing or empty is either written (after confirm) or still listed as blocked by the user.
+Draft from [issue-tracker-github.md](./issue-tracker-github.md) or [issue-tracker-local.md](./issue-tracker-local.md), or freeform for Other.
 
-### 5. Repair runtime
+#### Section B — Triage labels (if missing)
 
-Apply [overwrite-policy.md](overwrite-policy.md). Safe auto-repair only:
+> Explainer: Work moves through roles (needs evaluation, waiting on reporter, ready for agent, ready for human, won't fix). Skills apply labels that must match strings this repo actually uses.
 
-1. Create `.agent-workflows/logs/` if missing; ensure `.gitkeep` inside.
-2. If `.agent-workflows/progress.md` is **missing**, copy [progress.template.md](progress.template.md) to that path. If it exists, leave the body untouched.
-3. Ensure `.gitignore` contains every line from [gitignore.snippet](gitignore.snippet) (append missing lines only; create `.gitignore` if absent).
+Roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.  
+Default: label string equals role name. Ask for overrides.
 
-**Done when:** checklist items 4–6 would all be **present** if re-audited now (or user blocked a change).
+Draft from [triage-labels.md](./triage-labels.md).
+
+#### Section C — Domain docs (if missing)
+
+> Explainer: Some skills read domain language and ADRs. They need single-context vs multi-context layout.
+
+- **Single-context** (default) — `CONTEXT.md` + `docs/adr/` at root
+- **Multi-context** — `CONTEXT-MAP.md` pointing at per-context files
+
+Do not require creating `CONTEXT.md` for READY. Draft from [domain.md](./domain.md).
+
+**Done when:** every missing policy piece has a user-accepted draft (or user aborted that piece).
+
+### 4. Confirm and write policy
+
+Show the user a draft of each **new or empty** policy file. Let them edit before writing.
+
+Write only after confirm:
+
+- `docs/agents/issue-tracker.md`
+- `docs/agents/triage-labels.md`
+- `docs/agents/domain.md`
+
+**Never** overwrite non-empty policy without explicit confirmation to replace.
+
+**Done when:** policy files that were missing/empty are written or still listed as blocked.
+
+### 5. Repair runtime (safe auto-repair)
+
+No confirm unless something surprising exists:
+
+1. Create `.agent-workflows/logs/` if missing; ensure empty `.gitkeep` inside.
+2. If `.agent-workflows/progress.md` is **missing**, copy [progress.template.md](./progress.template.md). If it exists, **never** wipe the body.
+3. Ensure `.gitignore` includes these lines (append missing only; create `.gitignore` if absent):
+
+```gitignore
+# agent-workflows runtime (local session state)
+.agent-workflows/progress.md
+.agent-workflows/logs/*
+!.agent-workflows/logs/.gitkeep
+```
+
+**Done when:** checklist items 4–6 would be present if re-checked now.
 
 ### 6. Optional project pointer
 
@@ -88,11 +138,9 @@ If neither file exists, skip unless the user asks to create one.
 
 **Done when:** offer handled (accepted, declined, or N/A).
 
-### 7. Re-audit and report
+### 7. Re-audit and done
 
-Re-read the product tree. Apply [checklist.md](checklist.md) again for **every** row (exhaustive — not from memory of step 2).
-
-Print:
+Re-check **every** checklist row on disk (exhaustive — not from memory of step 2). Print:
 
 ```text
 agent-workflows status
@@ -105,7 +153,7 @@ agent-workflows status
 - overall: READY | NOT READY
 ```
 
-If READY: note that engineering skills can use `docs/agents/*` and humans/agents may append to `.agent-workflows/progress.md`.  
+If READY: engineering skills can use `docs/agents/*`; append session notes to `.agent-workflows/progress.md` as needed. Re-run this skill anytime to re-ensure.  
 If NOT READY: list exact remaining gaps.
 
-**Done when:** final status printed and every checklist row was re-checked on disk.
+**Done when:** final status printed after on-disk re-audit.

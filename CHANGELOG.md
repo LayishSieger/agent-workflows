@@ -13,3 +13,4 @@
 ### Changed
 
 - Moved all seeds/templates into `skills/init-workflows/` (removed top-level `templates/`)
+- Matt-shaped package: process inlined in `SKILL.md`; siblings are seeds only (dropped checklist / overwrite / interview / gitignore files)
