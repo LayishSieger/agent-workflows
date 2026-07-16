@@ -121,17 +121,28 @@ No confirm unless something surprising exists:
 
 ### 6. Optional project pointer
 
-If `AGENTS.md` or `CLAUDE.md` exists and has no pointer to `docs/agents/` and `.agent-workflows/`:
+If `AGENTS.md` or `CLAUDE.md` exists and has no pointer to `.agent-workflows/`:
 
 - Prefer the file that already exists; if both, prefer `AGENTS.md`.
 - **Offer** a short section; write only on yes. Not required for READY.
+- Do **not** mention `/init-workflows` or other slash names here — this skill is user-invoked only (`disable-model-invocation: true`); AGENTS should not nudge the model to call it.
+- Do **not** duplicate policy already covered under an existing Agent skills / docs/agents section. If policy is already documented, offer **runtime only**.
+
+Runtime-only (when policy is already elsewhere):
+
+```markdown
+## Agent workflows
+
+- Runtime: `.agent-workflows/` (`progress.md`, `logs/`)
+```
+
+Full pointer (only if policy is not already documented in the same file):
 
 ```markdown
 ## Agent workflows
 
 - Policy: `docs/agents/` (issue tracker, triage labels, domain)
 - Runtime: `.agent-workflows/` (`progress.md`, `logs/`)
-- Re-verify anytime: `/init-workflows`
 ```
 
 If neither file exists, skip unless the user asks to create one.

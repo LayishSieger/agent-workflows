@@ -14,3 +14,4 @@
 
 - Moved all seeds/templates into `skills/init-workflows/` (removed top-level `templates/`)
 - Matt-shaped package: process inlined in `SKILL.md`; siblings are seeds only (dropped checklist / overwrite / interview / gitignore files)
+- Optional AGENTS pointer: no slash/`init-workflows` line (user-invoked skill); runtime-only when policy already documented
