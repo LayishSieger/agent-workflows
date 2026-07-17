@@ -2,3 +2,8 @@
 .agents/
 .claude/
 skills-lock.json
+
+# agent-workflows runtime (local session state)
+.agent-workflows/progress.md
+.agent-workflows/logs/*
+!.agent-workflows/logs/.gitkeep
