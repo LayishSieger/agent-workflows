@@ -113,11 +113,13 @@ Sequential `1..N`:
 4. Re-read `.agent-workflows/progress.md` latest `outcome:`.
 5. Apply stop rules; else continue until `N`.
 
+**Control plane is progress only.** The host greps `.agent-workflows/progress.md`; it does **not** call tracker ops (`list-queue`, `incomplete-claim`, etc.). Queue emptiness and incomplete claims are the **worker’s** job when it writes `outcome: COMPLETE` (or other terminals). That keeps the shell host tracker-free and thin.
+
 ### Stop rules
 
 | Condition | Overall |
 |-----------|---------|
-| Empty ready-queue + no incomplete claim (via progress **COMPLETE**, prefer before spawn) | **COMPLETE** |
+| Latest progress `outcome:` **COMPLETE** (worker reported empty ready-queue + no incomplete claim; prefer before spawn) | **COMPLETE** |
 | Latest `outcome:` **BLOCKED** / **HARD_STOP** / **FAILED** | that outcome |
 | **SHIPPED** / **NEEDS_INFO** / **SKIPPED** and `i < N` | continue |
 | Hit **N** with work still continuing | **MAX** |

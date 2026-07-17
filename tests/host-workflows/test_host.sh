@@ -112,15 +112,7 @@ echo "== spawn resolution =="
   out="$(run_host "$product" -n 1 2>&1)"
   ec=$?
   set -e
-  assert_eq "missing spawn exit non-zero" "1" "$([[ $ec -ne 0 ]] && echo 1 || echo 0)"
-  # normalize: expect non-zero
-  if [[ $ec -ne 0 ]]; then
-    echo "  PASS: missing spawn exit non-zero (ec=$ec)"
-    PASS=$((PASS + 1))
-  else
-    echo "  FAIL: missing spawn should be non-zero"
-    FAIL=$((FAIL + 1))
-  fi
+  assert_eq "missing spawn exit non-zero" "1" "$ec"
   assert_contains "missing spawn HARD STOP message" "HARD STOP" "$out"
   assert_contains "missing spawn mentions spawn" "spawn" "$(echo "$out" | tr '[:upper:]' '[:lower:]')"
   rm -rf "$product" "$HOME"

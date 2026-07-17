@@ -50,8 +50,8 @@ The host runs:  $SPAWN "<tick prompt>"
 Workers must have loop-workflows installed. Progress path:
   <product>/.agent-workflows/progress.md
 
-Stop rules (progress outcome: + MAX):
-  COMPLETE   — empty ready-queue + no incomplete claim (prefer before spawn when known)
+Stop rules (progress outcome: + MAX only — host does not inspect the tracker queue):
+  COMPLETE   — latest progress outcome: COMPLETE (worker: empty queue + no incomplete claim)
   BLOCKED    — stop
   HARD_STOP  — stop
   FAILED     — stop (also if progress missing/unusable after spawn)
@@ -62,6 +62,12 @@ EOF
 
 log() { printf '%s\n' "$*"; }
 err() { printf '%s\n' "$*" >&2; }
+
+# Shared outcome vocabulary (single source for helpers + awk).
+# Use [[ =~ ]] — bash 3.2 (macOS) does not treat | from variables as case alternation.
+OUTCOME_ALL='SHIPPED|NEEDS_INFO|SKIPPED|COMPLETE|BLOCKED|HARD_STOP|FAILED'
+OUTCOME_STOP='COMPLETE|BLOCKED|HARD_STOP|FAILED'
+OUTCOME_CONTINUE='SHIPPED|NEEDS_INFO|SKIPPED'
 
 # Read one-line spawn file: first non-empty, non-# line, trim CR/spaces.
 read_spawn_file() {
@@ -109,7 +115,7 @@ resolve_spawn() {
 latest_outcome() {
   local progress="$1"
   [[ -f "$progress" ]] || return 0
-  awk '
+  awk -v ok="$OUTCOME_ALL" '
     /^## Entries/ { in_entries = 1; next }
     in_entries && /^### / { want = 1; next }
     in_entries && want && /\*\*outcome:\*\*/ {
@@ -118,7 +124,7 @@ latest_outcome() {
       sub(/.*\*\*outcome:\*\*[[:space:]]*/, "", line)
       sub(/[[:space:]].*/, "", line)
       sub(/[^A-Z_].*/, "", line)
-      if (line ~ /^(SHIPPED|NEEDS_INFO|SKIPPED|COMPLETE|BLOCKED|HARD_STOP|FAILED)$/) {
+      if (line ~ ("^(" ok ")$")) {
         print line
         exit
       }
@@ -128,24 +134,15 @@ latest_outcome() {
 }
 
 valid_outcome() {
-  case "$1" in
-    SHIPPED|NEEDS_INFO|SKIPPED|COMPLETE|BLOCKED|HARD_STOP|FAILED) return 0 ;;
-    *) return 1 ;;
-  esac
+  [[ "$1" =~ ^($OUTCOME_ALL)$ ]]
 }
 
 is_stop_outcome() {
-  case "$1" in
-    COMPLETE|BLOCKED|HARD_STOP|FAILED) return 0 ;;
-    *) return 1 ;;
-  esac
+  [[ "$1" =~ ^($OUTCOME_STOP)$ ]]
 }
 
 is_continue_outcome() {
-  case "$1" in
-    SHIPPED|NEEDS_INFO|SKIPPED) return 0 ;;
-    *) return 1 ;;
-  esac
+  [[ "$1" =~ ^($OUTCOME_CONTINUE)$ ]]
 }
 
 fingerprint_progress() {
@@ -310,12 +307,9 @@ main() {
     break
   done
 
+  # Loop only ends without overall when every tick continued through N.
   if [[ -z "$overall" ]]; then
-    if [[ "$ticks" -ge "$max_n" ]]; then
-      overall="MAX"
-    else
-      overall="FAILED"
-    fi
+    overall="MAX"
   fi
 
   print_status "$max_n" "$ticks" "${last_outcome:-none}" "$overall"
