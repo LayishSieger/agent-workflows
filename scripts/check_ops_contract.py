@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Structural check for agent-workflows v0.3 tracker ops contract seeds.
+"""Structural check for agent-workflows v0.3 ops contract + loop skill.
 
 Fails if:
 - GitHub seed is missing any required ## <op> section, or a section lacks
   Input / Steps / Success / Failure field markers
 - Local seed is missing any of the same ## <op> headings
 - Progress template does not document the required outcome: enum values
+- loop-workflows skill is missing required op/role/outcome vocabulary, still
+  hard-codes tracker CLI recipes, or omits the 0.2→0.3 multi-N worker break
 
 Usage:
   python3 scripts/check_ops_contract.py
@@ -24,6 +26,7 @@ SKILL = ROOT / "skills" / "init-workflows"
 GITHUB_SEED = SKILL / "issue-tracker-github.md"
 LOCAL_SEED = SKILL / "issue-tracker-local.md"
 PROGRESS_TEMPLATE = SKILL / "progress.template.md"
+LOOP_SKILL = ROOT / "skills" / "loop-workflows" / "SKILL.md"
 
 REQUIRED_OPS = (
     "preflight",
@@ -105,6 +108,112 @@ def check_progress(text: str, errors: list[str]) -> None:
             )
 
 
+# Tracker CLI recipes must live in product policy, not loop skill prose.
+TRACKER_CLI_BANS = (
+    r"\bgh\s+issue\b",
+    r"\bgh\s+pr\b",
+    r"\bgh\s+api\b",
+    r"\bgh\s+auth\b",
+    r"\bgh\s+repo\b",
+    r"\bgh\s+label\b",
+)
+
+# Multi-N must be parent-schedules-workers, not same-session multi-implement.
+WORKER_BREAK_MARKERS = (
+    r"fresh\s+one[- ]tick\s+worker",
+    r"\bsubagent",
+    r"0\.2",
+    r"hard\s+break|breaking\s+change|no longer|not\s+.*same[- ]session",
+)
+
+
+def check_loop_skill(text: str, errors: list[str]) -> None:
+    """loop-workflows must be policy-driven (ops/roles by name) and document multi-N workers."""
+    # Ops invoked by name (tracker-agnostic)
+    for op in REQUIRED_OPS:
+        if not re.search(rf"\b{re.escape(op)}\b", text):
+            errors.append(f"loop-workflows: must invoke op by name `{op}`")
+
+    # Triage roles by name (canonical)
+    for role in (
+        "ready-for-agent",
+        "ready-for-human",
+        "needs-info",
+    ):
+        if role not in text:
+            errors.append(f"loop-workflows: must mention triage role `{role}`")
+
+    # Progress control plane (`outcome:` — no trailing \b; colon is non-word)
+    if not re.search(r"\boutcome:", text):
+        errors.append("loop-workflows: progress entries must require `outcome:` field")
+    for value in ("SHIPPED", "NEEDS_INFO", "SKIPPED", "BLOCKED", "HARD_STOP"):
+        if not re.search(rf"\b{re.escape(value)}\b", text):
+            errors.append(
+                f"loop-workflows: missing required progress outcome value `{value}`"
+            )
+
+    # Claim / publish product meaning
+    if not re.search(r"leave[- ]queue", text, re.IGNORECASE):
+        errors.append("loop-workflows: claim must be documented as leave-queue only")
+    if not re.search(
+        r"(no|never|without)\s+(a\s+)?[`'\"*]*(claimed)[`'\"*]*\s+role"
+        r"|no\s+[`'\"*]*(claimed)[`'\"*]*\s+role"
+        r"|do\s+not\s+add\s+.*claimed",
+        text,
+        re.IGNORECASE,
+    ):
+        errors.append("loop-workflows: must state there is no claimed triage role")
+    if "create-publish-artifact" not in text:
+        errors.append(
+            "loop-workflows: success path must call create-publish-artifact by name"
+        )
+    if not re.search(r"never\s+re-?appl|do not\s+re-?appl|no re-?queue", text, re.I):
+        errors.append(
+            "loop-workflows: fail path must never re-apply ready-for-agent / re-queue"
+        )
+
+    # Soft-skips
+    if "detect-publish-artifact" not in text:
+        errors.append("loop-workflows: soft-skip must use detect-publish-artifact")
+    if not re.search(r"blocker|blocked by", text, re.I):
+        errors.append("loop-workflows: must soft-skip open blockers")
+    if not re.search(r"spec|PRD|/to-spec", text, re.I):
+        errors.append("loop-workflows: must skill-side soft-skip PRD/spec bodies")
+    if not re.search(r"\bSKIPPED\b", text):
+        errors.append("loop-workflows: PRD/spec path must record outcome SKIPPED")
+
+    # Modes: once in-session; max N = workers only
+    if not re.search(r"\bonce\b", text, re.I):
+        errors.append("loop-workflows: must document once (default) mode")
+    if not re.search(r"max\s+N|max_items", text, re.I):
+        errors.append("loop-workflows: must document max N mode")
+    worker_hits = sum(
+        1 for p in WORKER_BREAK_MARKERS if re.search(p, text, re.IGNORECASE)
+    )
+    if worker_hits < 3:
+        errors.append(
+            "loop-workflows: must document max N as fresh one-tick workers "
+            "and hard break from 0.2 same-session multi-N"
+        )
+    if not re.search(
+        r"parent\s+(only\s+)?schedul|schedules?\s+only|does not implement",
+        text,
+        re.I,
+    ):
+        errors.append(
+            "loop-workflows: max N parent must only schedule (not implement N in one context)"
+        )
+
+    # No hard-coded tracker CLI recipes in skill body
+    for pattern in TRACKER_CLI_BANS:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            errors.append(
+                f"loop-workflows: must not hard-code tracker CLI recipe "
+                f"(found `{m.group(0).strip()}`); use policy op Steps instead"
+            )
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -112,6 +221,7 @@ def main() -> int:
         (GITHUB_SEED, "GitHub seed"),
         (LOCAL_SEED, "Local seed"),
         (PROGRESS_TEMPLATE, "Progress template"),
+        (LOOP_SKILL, "loop-workflows skill"),
     ):
         if not path.is_file():
             errors.append(f"{label}: file not found at {path}")
@@ -122,6 +232,8 @@ def main() -> int:
         check_local(LOCAL_SEED.read_text(encoding="utf-8"), errors)
     if PROGRESS_TEMPLATE.is_file():
         check_progress(PROGRESS_TEMPLATE.read_text(encoding="utf-8"), errors)
+    if LOOP_SKILL.is_file():
+        check_loop_skill(LOOP_SKILL.read_text(encoding="utf-8"), errors)
 
     if errors:
         print("check-ops-contract: FAIL", file=sys.stderr)
@@ -134,6 +246,7 @@ def main() -> int:
     print(f"  GitHub seed: {len(REQUIRED_OPS)} ops with Input/Steps/Success/Failure")
     print(f"  Local seed:  {len(REQUIRED_OPS)} op headings present")
     print(f"  Progress:    outcome enum ({', '.join(OUTCOME_ENUM)})")
+    print(f"  loop-workflows: ops-by-name, no tracker CLI, multi-N workers")
     return 0
 
 

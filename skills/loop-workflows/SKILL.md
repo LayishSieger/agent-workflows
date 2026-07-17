@@ -1,151 +1,293 @@
 ---
 name: loop-workflows
-description: Bounded GitHub ready-for-agent implement→PR loop (once or max N).
+description: Shared tick + chat scheduler (once in-session; max N via fresh one-tick workers). Policy ops only.
 disable-model-invocation: true
 ---
 
 # Loop workflows
 
-**Tick** the product’s GitHub `ready-for-agent` queue in this session: resume or pick → **claim** → implement → **publish** PR → progress. Not a host runner. Does not merge, close issues, or create tickets.
+**Sole home of the shared tick** and the **chat** entry for agent-workflows v0.3. Schedulers only count N and stop; the **worker** owns resume | pick → claim → implement → publish → progress.
 
-**Leading words:** *tick* = one issue pass; *claim* = comment + drop queue label before coding; *publish* = open PR + `ready-for-human` (no merge). Terminals: **COMPLETE** | **BLOCKED** | **MAX** | **HARD STOP**.
+Call **op names** and triage **role names** only. Concrete tracker CLIs live in product policy (`docs/agents/issue-tracker.md` Steps). Role strings map via `docs/agents/triage-labels.md`. Do **not** invent tracker recipes in this skill.
 
-Labels: read `docs/agents/triage-labels.md` for exact strings (`ready-for-agent`, `ready-for-human`, `needs-info`). One triage role at a time; never invent labels.
+**Not** a shell host (see `host-workflows`). Does not merge publish artifacts, close issues as done, create tickets, or re-queue work.
+
+Design freeze: hub `docs/v0.3.md`.
 
 ## Modes
 
-| Mode | When | Behavior |
-|------|------|----------|
-| **once** (default) | `/loop-workflows` | At most one tick |
-| **max N** | User states positive **N** | Up to N ticks; no silent unlimited drain |
+| Mode | Invocation | Behavior |
+|------|------------|----------|
+| **once** (default) | `/loop-workflows` | Run **exactly one** shared tick **in this session** end-to-end |
+| **max N** | User states positive **N** (e.g. `max 3`) | Parent **only schedules**; each tick is a **fresh one-tick worker** (subagent / clean session) |
 
 “Drain until empty” without N → ask for N or use **once**.
 
-| Outcome | When |
-|---------|------|
-| **COMPLETE** | No queue work and no incomplete claim |
-| **BLOCKED** | Queue non-empty but nothing claimable |
-| **MAX** | Hit N with work left |
-| **HARD STOP** | Preflight failed |
+### Breaking change (0.2 → 0.3) — hard break
 
-## Process
+**0.2** ran up to N ticks **in the same session** (one context stuffed with multiple implements).
 
-### 1. Root and mode
+**0.3 max N** is a **hard break**: the parent agent **does not implement N tickets in one context**. It schedules N independent workers; each worker runs the shared tick once and exits. No compatibility flag — pin a 0.2 install if same-session multi-N is required.
 
-Product root (`git rev-parse --show-toplevel`). Default `max_items=1`; else user N. `i=0`.
+**once** is unchanged in shape: one in-session tick.
 
-**Done when:** root and `max_items` known.
+## Glossary
 
-### 2. Preflight → HARD STOP on fail
+| Term | Meaning |
+|------|---------|
+| **tick** | One shared pass: resume \| pick → claim → implement → publish → progress |
+| **claim** | Leave-queue only — see **Claim / publish product meaning** |
+| **publish** | Artifact then ready-for-human — see **Claim / publish product meaning** |
+| **outcome:** | Required machine field on progress entries for host/scheduler control |
 
-| Check | Fail when |
-|-------|-----------|
-| Git | No repo root |
-| Clean tree | `git status --porcelain` non-empty |
-| GitHub + `gh` | Remote/policy not GitHub/`gh`, or `gh auth status` fails |
-| Policy | `docs/agents/issue-tracker.md` or `triage-labels.md` missing/empty |
+Terminal / control-plane outcomes (progress `outcome:`):
 
-**`gh` / sandbox:** If `gh auth status` fails with keyring/OS keychain errors inside a restricted sandbox, **retry the same checks with full host permissions** (Cursor “all” / outside sandbox). Do not invent a different tracker. HARD STOP only after host retry still fails.
+| `outcome:` | When |
+|------------|------|
+| **SHIPPED** | Publish artifact created; ready-for-human |
+| **NEEDS_INFO** | Fail path; needs-info; no success artifact |
+| **SKIPPED** | Soft-skip that settled the ticket (e.g. spec/PRD → ready-for-human) |
+| **COMPLETE** | Empty queue + no incomplete claim |
+| **BLOCKED** | Queue non-empty; nothing claimable |
+| **HARD_STOP** | Preflight / env / infra failure |
+| **FAILED** | Control-plane failure (e.g. missing progress after a scheduled worker) |
 
-Not gates: `domain.md`, AGENTS.md. Ensure `.agent-workflows/logs/` exists. If `progress.md` missing, create a short header + `## Entries` (do not wipe existing). Integration branch: from issue-tracker **Integration branch** if set, else repo default (`gh repo view`). `git fetch origin`.
+Scheduler-only labels (status line, not always progress enum): **MAX** when N hit with work left.
 
-**Done when:** checks pass; progress/logs exist; integration name known.
+## Policy discovery (worker)
 
-**Announce intent (required before any claim or implement):**
+From product repo root:
 
-1. Scan incomplete claims (same rules as §3a).  
-2. List open `ready-for-agent` (numbers + titles, oldest first).  
-3. Print one of:
+1. Require `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md` (non-empty).
+2. Optional: `docs/agents/domain.md`, CONTEXT — read when implementing.
+3. Runtime: `.agent-workflows/progress.md` (auto-create from template header + `## Entries` if missing; **never wipe** existing body). Ensure `.agent-workflows/logs/` exists.
+4. Do **not** preload full progress history by default — **append** only.
+
+Resolve role label **strings** from triage-labels (canonical roles → tracker labels). Skills speak roles; ops use the mapped strings.
+
+## Process — **once** (or any one-tick worker)
+
+Product root (`git rev-parse --show-toplevel`). This path runs **exactly one** shared tick in the current session.
+
+### 1. Preflight
+
+Run policy ops:
+
+1. **preflight** — on Failure **HARD_STOP** → progress `outcome: HARD_STOP`, stop.
+2. **integration-base** — remember base branch name for feature branches and publish.
+
+**Done when:** env usable; integration base known; progress/logs ready.
+
+### 2. Announce plan (before claim or implement)
+
+1. Run **incomplete-claim** (at most one resume candidate).
+2. Run **list-queue** (thin ready list, oldest first — do not pre-filter claimable in the op).
+3. Walk soft-skips (below) mentally to name the first claimable pick.
+4. Print:
 
 ```text
 loop-workflows plan
-- will resume: #N — <title>   # if incomplete claim wins
+- will resume: #N — <title>   # if incomplete-claim wins
 - else will pick: #N — <title>  # first claimable after soft-skips, or "none"
 - queue ready-for-agent: <count>
-- mode: once | max N
+- mode: once | worker-one-tick
 ```
 
 If the user is present and the plan is wrong, stop and ask — do not claim yet.
 
-Print header: mode, integration, ready-for-agent label, tick `0/N`. Then while `i < max_items`:
+Print header: mode, integration base, ready-for-agent role label, then run **§3 One tick** once.
 
-### 3. One tick
+### 3. One tick (shared recipe)
 
-**3a. Resume** — Before a new pick, finish **at most one** incomplete claim: local `feat/<N>-*` with no non-draft PR for `#N`, or claimed open issue lacking both queue and `ready-for-human` with no non-draft open PR. If found, stay on that branch; jump to **3e** (skip new claim). Else continue.
+```text
+resume | pick → claim → implement → publish → progress
+```
 
-**3b. Queue** — List open issues with ready-for-agent label; **oldest first**. Empty and no resume → **COMPLETE**.
+#### 3a. Resume
 
-**3c. Claimable** — Walk oldest → newest. Skip when:
+If **incomplete-claim** returned a target: stay on / check out that work; **skip new claim**; jump to **3e implement** (or publish if implement already done). Else continue to pick.
 
-| Skip | Condition |
-|------|-----------|
-| Open PR | Non-draft open PR targets `#N` (draft does not block pick) |
-| Blockers | Body has open **Blocked by** issues |
-| **Spec / PRD (not a ticket)** | Body looks like a Matt **`/to-spec`** publish, not a **`/to-tickets`** slice — see below |
+#### 3b. Queue empty?
 
-No stack/epic: base is always integration. None claimable → **BLOCKED** (list why). Else pick first claimable `#N`.
+If **list-queue** is empty and no resume → progress `outcome: COMPLETE`; go to **§5 Final status**.
 
-**Spec / PRD detection (do not implement):** Treat as non-implementable if **two or more** hold:
+#### 3c. Pick claimable (soft-skip walk)
+
+Walk **list-queue** oldest → newest. For each candidate `#N`:
+
+| Soft-skip | How |
+|-----------|-----|
+| Open publish artifact | **detect-publish-artifact** present (Success) → SOFT_SKIP |
+| Open blockers | **read-ticket** reports open blockers → SOFT_SKIP |
+| Spec / PRD (skill-side) | Body looks like Matt **`/to-spec`** / PRD container, not a **`/to-tickets`** slice — see below → settle ticket, do not implement |
+
+No stack/epic base engine: publish base is always **integration-base**.
+
+If queue non-empty but **nothing claimable** → progress `outcome: BLOCKED` (list why per candidate); go to **§5**.
+
+Else pick first claimable `#N`.
+
+**Spec / PRD detection (skill-side, after thin list; re-check after full read):** Treat as non-implementable if **two or more** hold:
 
 - Has `## Problem Statement` and `## Solution` (or `## User Stories`)
 - Has `## Implementation Decisions` or `## Testing Decisions`
 - Has a long user-story list and **lacks** both `## Acceptance criteria` and `## What to build`
 - Title/body clearly marks itself as PRD/spec/epic container only
 
-**On skip:** comment that this is a spec/PRD for splitting via `/to-tickets` (or equivalent), not an implementable AFK slice; remove `ready-for-agent`; add `ready-for-human` (human decides next: split tickets or re-queue a child). Progress line; consume tick; go to §4. Do **not** open a PR for the PRD itself.
+**On PRD/spec soft-skip (settles the ticket):**
 
-*(Matt `/to-spec` applies `ready-for-agent` by design — do not change that skill; this loop refuses to implement those issues.)*
+1. **comment** — this is a spec/PRD for splitting (e.g. `/to-tickets`), not an implementable AFK slice.
+2. **label-transition** → **ready-for-human** (exclusive triage role; removes ready-for-agent).
+3. Progress with `outcome: SKIPPED`; **no** create-publish-artifact.
+4. Tick ends (once / worker done).
 
-**3d. Claim** — `gh issue view N --comments`. Re-check spec/PRD after full body read; if matched, same skip path as §3c. Else comment claim (integration, UTC); **immediately** remove ready-for-agent; do not add ready-for-human yet.
+*(Upstream `/to-spec` may still apply ready-for-agent — this loop refuses to implement those bodies.)*
 
-**3e. Branch + implement** — `git checkout -B feat/<N>-<slug> origin/<integration>` (resume: keep branch). Implement **only** `#N` in this session. Read `domain.md` / CONTEXT if present.
+#### 3d. Claim (leave-queue only)
 
-Implement discipline (same session):
+1. **read-ticket** for `#N` (full body + comments). Re-check spec/PRD; if matched, same settle path as §3c.
+2. Run **claim** per **Claim / publish product meaning**: leave-queue only (comment + remove **ready-for-agent**; no `claimed` role).
+   - Race (already left queue) → SOFT_SKIP try next; none left → BLOCKED
+   - Infra failure → HARD_STOP
 
-1. Prefer TDD at clear seams when the change warrants tests (pick seams from the issue/AC; do not block on a human seam meeting).
+#### 3e. Implement
+
+Branch from integration base (e.g. `feat/<N>-<slug>`). Implement **only** `#N`. Read domain/CONTEXT if present.
+
+Quality bar (unchanged intent from 0.2):
+
+1. Prefer TDD at clear seams when the change warrants tests.
 2. Run **typechecking** as you go when the repo has it.
 3. Run **focused tests** for touched areas as you go.
-4. Run a **broader test pass once at the end** before publish (full suite if reasonable; otherwise the product’s usual package/app checks for the touch set).
-5. If the issue lists explicit commands to run, run those too.
-6. Spec pass: every acceptance criterion done or explicitly N/A with reason (issue comment) **before** publish.
-7. Optional: light self-review against the issue (`/code-review` if available); do not block publish when checks are green.
+4. Run a **broader test pass once at the end** before publish.
+5. If the issue lists explicit commands, run those too.
+6. Spec pass: every acceptance criterion done or explicitly N/A with reason (**comment**) **before** publish.
+7. Optional light self-review; do not block publish when checks are green.
 
-**Implement done when:** AC comment written **and** typecheck/tests (as above) have been run with results noted in the issue comment or progress entry. Do not open a PR until then.
+**Implement done when:** AC accounted for **and** typecheck/tests (as above) run with results noted. Do not publish until then.
 
-**3f. Publish or bail**
+#### 3f. Publish or fail
 
-| Result | Action |
-|--------|--------|
-| Checks pass | Commit (`#N`), push, open PR base=integration, body `Closes #N`, **no merge/close**; add `ready-for-human`; comment PR URL |
-| Checks fail or blocked on AC | Comment; `needs-info` (or leave for human with clear note); progress; no success PR; `i++`; §4 — **do not** retry same `#N` this run |
+Apply success / fail paths per **Claim / publish product meaning** (artifact + **ready-for-human** → `SHIPPED`; **needs-info**, never re-apply **ready-for-agent** → `NEEDS_INFO`). Do not retry the same `#N` this tick after fail.
 
-**3g. Progress** — Append newest-first under `.agent-workflows/progress.md`:
+#### 3g. Progress
+
+Append newest-first under `.agent-workflows/progress.md`. **`outcome:` is required**:
 
 ```markdown
 ### YYYY-MM-DD — #N — <title>
-- **Base:** … | **PR:** … | **Outcome:** shipped-PR | needs-info | blocked | skipped-spec | failed
-- **What:** … | **Checks:** … | **Learnings:** …
+- **outcome:** SHIPPED | NEEDS_INFO | SKIPPED | COMPLETE | BLOCKED | HARD_STOP | FAILED
+- **publish:** <url or none>
+- **checks:** pass | fail | n/a
+- **note:** ≤1 line
 ```
 
-**Done when:** tick outcome recorded; `i` incremented.
+Optional prose (What / Learnings) may follow; hosts key off **`outcome:`**.
 
-### 4. After tick
+**Done when:** tick outcome recorded. For **once** / worker: stop after this single tick (do not loop).
 
-If another tick: checkout integration cleanly (`git checkout` + ff-only pull if safe). Cannot get clean tree → **HARD STOP** (do not mix issues).  
-If `i >= max_items` and work remains → **MAX**. Else if more ticks allowed and not COMPLETE/BLOCKED/HARD STOP → §3. Do not ask “continue?” when N was explicit.
+### 4. After one tick (once / worker)
+
+Print **§5 Final status**. Worker sessions end here — they do not schedule further ticks.
 
 ### 5. Final status
 
 ```text
 loop-workflows status
-- mode: once | max N
-- ticks: i / N
+- mode: once | worker-one-tick | max N (parent)
+- ticks: <completed> / <N or 1>
 - last_issue: #N | none
-- last_outcome: …
-- queue_ready_for_agent: <count>
-- overall: COMPLETE | BLOCKED | MAX | HARD STOP
+- last_outcome: SHIPPED | NEEDS_INFO | SKIPPED | COMPLETE | BLOCKED | HARD_STOP | FAILED | …
+- queue ready-for-agent: <count>
+- overall: COMPLETE | BLOCKED | MAX | HARD_STOP | FAILED | (partial if max N mid-run)
 ```
 
-Empty queue COMPLETE: say so; create tickets that match `docs/agents` triage (Matt `/to-tickets` slices or manual). Planning skills install separately.
+Empty queue COMPLETE: say so; suggest creating tickets that match `docs/agents` triage (planning skills install separately). This skill never force-installs companions.
 
-**Done when:** status printed.
+---
+
+## Process — **max N** (chat parent scheduler only)
+
+Parent **only schedules**. Parent **does not** implement N tickets in one context (hard break from 0.2).
+
+### Parent steps
+
+1. Product root; default nothing to implement in parent.
+2. Optional cheap preflight: if **list-queue** empty and **incomplete-claim** empty → COMPLETE without spawning (prefer detect **before** spawn).
+3. For `i` from 1 to N:
+   - If stop rule hits (below), break.
+   - Spawn a **fresh one-tick worker** (subagent / clean session) with:
+     - product cwd
+     - instruction: **run exactly one shared tick** (this skill’s **once** / worker path)
+     - policy discovery in-repo (`docs/agents/*`)
+   - **Do not** pass: issue id, remaining N, host queue blob, stack base.
+   - After worker returns: read **latest** progress `outcome:` (do not require full history).
+   - Apply stop rules.
+4. Print **§5 Final status** with mode `max N`.
+
+### Worker prompt (conceptual)
+
+```text
+In this product repo, run loop-workflows shared tick once:
+resume | pick → claim → implement → publish → progress.
+Discover policy under docs/agents/*. Call ops and triage roles by name only.
+Exactly one tick; then stop.
+```
+
+### Scheduler stop rules (chat parent)
+
+| Condition | Action |
+|-----------|--------|
+| Empty ready-queue + no incomplete claim | **COMPLETE** (prefer before spawn) |
+| Latest progress `outcome:` is **BLOCKED**, **HARD_STOP**, or **FAILED** | Stop |
+| Tick finished **SHIPPED** / **NEEDS_INFO** / **SKIPPED** and work may remain | Continue if `i < N` |
+| Hit N with work left | **MAX** |
+| Missing/unusable progress after a worker that should have written it | **FAILED** / stop |
+
+Process exit codes are **not** tick success. Control plane = progress `outcome:` + queue re-check.
+
+Between workers, parent does not accumulate implement context for multiple issues. Each worker is isolated.
+
+---
+
+## Ops reference (names only)
+
+Worker invokes these from product `docs/agents/issue-tracker.md` (each has Input / Steps / Success / Failure):
+
+1. **preflight**
+2. **integration-base**
+3. **list-queue**
+4. **read-ticket**
+5. **comment**
+6. **label-transition**
+7. **claim**
+8. **detect-publish-artifact**
+9. **incomplete-claim**
+10. **create-publish-artifact**
+
+Failure words from policy: **HARD_STOP** | **SOFT_SKIP** | **NEEDS_INFO** | **OK**.
+
+### Triage roles (canonical)
+
+Exclusive set via **label-transition** — exactly one of:
+
+`needs-triage` | `needs-info` | `ready-for-agent` | `ready-for-human` | `wontfix`
+
+Map strings through `triage-labels.md`. Non-triage labels untouched. **No `claimed` role.**
+
+### Claim / publish product meaning
+
+Canonical product meaning (other sections point here):
+
+- **Claim** = **leave-queue only**: claim **comment** + remove **ready-for-agent**. **No `claimed` role** — mid-flight is inferred via **incomplete-claim**. Race → SOFT_SKIP; infra → HARD_STOP.
+- **Success** = **create-publish-artifact** (durable review handoff; linked to ticket; **do not merge**; **do not close** issue as done) → **label-transition** → **ready-for-human** → progress `outcome: SHIPPED`.
+- **Fail** = **comment** → **label-transition** → **needs-info** → **no** success artifact → progress `outcome: NEEDS_INFO`. **Never re-apply ready-for-agent** (human owns re-queue).
+- **ready-for-human** = agent done for now; artifact optional (absent on SKIPPED spec path).
+
+## Out of scope (this skill)
+
+- Shell host / spawn resolution (`host-workflows`)
+- Unbounded drain without explicit N
+- Stack/epic/merge bots; park-branch fleet; multi-spawn rate limits
+- Dual implement/validate workers
+- Hard-coding tracker CLIs (belong in product policy Steps)
