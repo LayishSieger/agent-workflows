@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
-**Out of scope:** implementing features, draining issue queues, runners, secrets.
+**Out of scope:** implementing features, draining issue queues (use `/loop-workflows`), runners, secrets.
 
 All seeds ship **in this skill directory**. Never require a separate hub checkout.
 
@@ -64,7 +64,7 @@ Options:
 - **Local markdown** — files under `.scratch/` (or a path the user names)
 - **Other** — user describes the workflow in one paragraph
 
-If GitHub: ask whether **external PRs** are a triage surface (default **no**).
+If GitHub: ask whether **external PRs** are a triage surface (default **no**). Optionally ask for **integration branch** if PRs do not land on the repo default (default: leave seed as `main` / user override).
 
 Draft from [issue-tracker-github.md](./issue-tracker-github.md) or [issue-tracker-local.md](./issue-tracker-local.md), or freeform for Other.
 

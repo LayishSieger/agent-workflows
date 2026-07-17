@@ -1,0 +1,4 @@
+# Local skill install / agent tooling (not part of the published source tree)
+.agents/
+.claude/
+skills-lock.json

@@ -13,6 +13,14 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this when run inside a clone.
 
+## Integration branch
+
+Git base for agent feature branches and PR `--base` (used by `/loop-workflows`).
+
+**Integration branch:** `main`
+
+_(Change to `dev`, `trunk`, etc. if PRs land somewhere other than the GitHub default branch. If unset, loop-workflows falls back to the repo default branch.)_
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.**
