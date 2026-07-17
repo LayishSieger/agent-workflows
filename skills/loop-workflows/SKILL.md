@@ -31,13 +31,13 @@ Design freeze: hub `docs/v0.3.md`.
 
 **once** is unchanged in shape: one in-session tick.
 
-## Leading words
+## Glossary
 
 | Term | Meaning |
 |------|---------|
 | **tick** | One shared pass: resume \| pick → claim → implement → publish → progress |
-| **claim** | **leave-queue only**: claim **comment** + remove **ready-for-agent**. **No `claimed` role** — mid-flight is inferred via **incomplete-claim** |
-| **publish** | **create-publish-artifact** then **label-transition** → **ready-for-human** (no merge / no close-as-done) |
+| **claim** | Leave-queue only — see **Claim / publish product meaning** |
+| **publish** | Artifact then ready-for-human — see **Claim / publish product meaning** |
 | **outcome:** | Required machine field on progress entries for host/scheduler control |
 
 Terminal / control-plane outcomes (progress `outcome:`):
@@ -117,7 +117,7 @@ Walk **list-queue** oldest → newest. For each candidate `#N`:
 
 | Soft-skip | How |
 |-----------|-----|
-| Open publish artifact | **detect-publish-artifact** present (non-draft open artifact) → SOFT_SKIP |
+| Open publish artifact | **detect-publish-artifact** present (Success) → SOFT_SKIP |
 | Open blockers | **read-ticket** reports open blockers → SOFT_SKIP |
 | Spec / PRD (skill-side) | Body looks like Matt **`/to-spec`** / PRD container, not a **`/to-tickets`** slice — see below → settle ticket, do not implement |
 
@@ -146,10 +146,7 @@ Else pick first claimable `#N`.
 #### 3d. Claim (leave-queue only)
 
 1. **read-ticket** for `#N` (full body + comments). Re-check spec/PRD; if matched, same settle path as §3c.
-2. Run **claim**:
-   - claim **comment** (via **comment** / claim Steps)
-   - remove **ready-for-agent** only (**leave-queue**)
-   - **Do not** add a `claimed` role
+2. Run **claim** per **Claim / publish product meaning**: leave-queue only (comment + remove **ready-for-agent**; no `claimed` role).
    - Race (already left queue) → SOFT_SKIP try next; none left → BLOCKED
    - Infra failure → HARD_STOP
 
@@ -171,10 +168,7 @@ Quality bar (unchanged intent from 0.2):
 
 #### 3f. Publish or fail
 
-| Result | Actions |
-|--------|---------|
-| Checks pass | **create-publish-artifact** (durable review handoff; linked to ticket; **do not merge**; **do not close** issue as done) → **label-transition** → **ready-for-human** → progress `outcome: SHIPPED` |
-| Checks fail / blocked on AC | **comment** → **label-transition** → **needs-info** → **no** success artifact → progress `outcome: NEEDS_INFO`. **Never re-apply ready-for-agent** (human owns re-queue). Do not retry same `#N` this tick |
+Apply success / fail paths per **Claim / publish product meaning** (artifact + **ready-for-human** → `SHIPPED`; **needs-info**, never re-apply **ready-for-agent** → `NEEDS_INFO`). Do not retry the same `#N` this tick after fail.
 
 #### 3g. Progress
 
@@ -281,11 +275,13 @@ Exclusive set via **label-transition** — exactly one of:
 
 Map strings through `triage-labels.md`. Non-triage labels untouched. **No `claimed` role.**
 
-### Claim / publish product meaning (summary)
+### Claim / publish product meaning
 
-- **Claim** = leave-queue only (comment + drop ready-for-agent). Race → SOFT_SKIP; infra → HARD_STOP.
-- **Success** = create-publish-artifact → ready-for-human → `outcome: SHIPPED`.
-- **Fail** = comment → needs-info → no artifact → `outcome: NEEDS_INFO`. **Never re-apply ready-for-agent.**
+Canonical product meaning (other sections point here):
+
+- **Claim** = **leave-queue only**: claim **comment** + remove **ready-for-agent**. **No `claimed` role** — mid-flight is inferred via **incomplete-claim**. Race → SOFT_SKIP; infra → HARD_STOP.
+- **Success** = **create-publish-artifact** (durable review handoff; linked to ticket; **do not merge**; **do not close** issue as done) → **label-transition** → **ready-for-human** → progress `outcome: SHIPPED`.
+- **Fail** = **comment** → **label-transition** → **needs-info** → **no** success artifact → progress `outcome: NEEDS_INFO`. **Never re-apply ready-for-agent** (human owns re-queue).
 - **ready-for-human** = agent done for now; artifact optional (absent on SKIPPED spec path).
 
 ## Out of scope (this skill)
