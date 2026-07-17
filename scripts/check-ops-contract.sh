@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Structural check: init-workflows tracker seeds match the v0.3 ops contract.
+# Structural check: v0.3 ops seeds, progress template, and loop-workflows skill.
 # Exit 0 on pass; non-zero with messages on fail.
 set -euo pipefail
 
