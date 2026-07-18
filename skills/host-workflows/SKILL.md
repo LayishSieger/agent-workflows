@@ -66,42 +66,7 @@ $SPAWN "<tick prompt>"
 
 - Prompt is the **final** CLI argument.
 - Host **never** adds `--continue` / `--resume` (clean one-shot context).
-- Unattended/edit flags (`--force`, `--always-approve`, etc.) live **inside** the spawn string.
-
-### Recipes (pin binary names)
-
-Examples only — copy into a spawn file or `--spawn`. Adjust flags for your agent version.
-
-**Cursor Agent CLI** (prefer `cursor-agent` over bare `agent`):
-
-```bash
-cursor-agent -p --force --trust --output-format text
-```
-
-**Claude Code:**
-
-```bash
-claude -p --permission-mode acceptEdits --output-format text
-```
-
-**Grok Build** (prefer `grok` over bare `agent` if both exist):
-
-```bash
-grok -p --always-approve --output-format plain
-```
-
-**Codex CLI:**
-
-```bash
-codex exec --sandbox workspace-write --ephemeral
-```
-
-Write one line, for example:
-
-```bash
-mkdir -p .agent-workflows
-echo 'cursor-agent -p --force --trust --output-format text' > .agent-workflows/spawn
-```
+- Any unattended flags belong in the **human-owned** spawn string (flag / env / spawn file), not in this skill.
 
 ## What the host does
 

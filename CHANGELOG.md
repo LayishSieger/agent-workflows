@@ -28,6 +28,7 @@
   - Hard break from 0.2 same-session multi-N; pin 0.2 install if old behavior is required
 - Claim / publish product meaning: leave-queue claim (no `claimed` role); success = create-publish-artifact → ready-for-human; fail → needs-info without re-queue
 - Status: hub is **v0.3** (policy-driven tick + dual schedulers), not v0.2 consumer-only
+- Security wording (skills.sh): ticket text is untrusted data; no free-form shell from issues; preflight fail-closed (no sandbox privilege escalate); spawn recipes with unattended flags live in human config / README only
 
 ## 0.2.0 — unreleased
 

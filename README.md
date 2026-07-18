@@ -113,6 +113,16 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 
 All missing → **HARD STOP** (no silent default binary). Host runs `$SPAWN "<tick prompt>"` with prompt as the final argument; never adds `--continue` / `--resume`.
 
+Spawn is **human-owned config** (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners you may choose (adjust for your agent version):
+
+```bash
+# product or machine file — one line only
+cursor-agent -p --force --trust --output-format text
+# claude -p --permission-mode acceptEdits --output-format text
+# grok -p --always-approve --output-format plain
+# codex exec --sandbox workspace-write --ephemeral
+```
+
 Workers must have **`loop-workflows`** installed for the agent binary you spawn. Control plane is progress **`outcome:`** only — process exit ≠ tick success.
 
 ## Product runtime (`.agent-workflows/`)

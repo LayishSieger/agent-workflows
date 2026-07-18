@@ -200,23 +200,7 @@ Ask where to put defaults (user may pick more than one, or none):
 
 If product or machine file **already exists** and is non-empty: show contents; **never overwrite** without explicit confirm to replace.
 
-If writing a new or replaced one-liner: draft from a **pinned binary name** (examples only — adjust flags for the user’s agent):
-
-```bash
-# Cursor Agent CLI (prefer cursor-agent over bare agent)
-cursor-agent -p --force --trust --output-format text
-
-# Claude Code
-claude -p --permission-mode acceptEdits --output-format text
-
-# Grok Build (prefer grok over bare agent if both exist)
-grok -p --always-approve --output-format plain
-
-# Codex CLI
-codex exec --sandbox workspace-write --ephemeral
-```
-
-Write **exactly one line** (the command string only). Create parent dirs if needed (`mkdir -p .agent-workflows` or `~/.config/agent-workflows`).
+If writing a new or replaced one-liner: ask the user for their **exact** spawn command (binary + flags they accept). Prefer pinned binary names (`cursor-agent`, `claude`, `grok`, `codex`) over bare `agent`. Do **not** invent unattended/trust flags. Write **exactly one line**. Create parent dirs if needed (`mkdir -p .agent-workflows` or `~/.config/agent-workflows`).
 
 **Done when:** user declined, chose flag-only, or spawn file(s) written/updated per confirm; host wire/install offer accepted (host-only preferred), declined, or N/A. Neither host nor spawn is required for READY; loop was not force-installed.
 
