@@ -181,6 +181,7 @@ Warn that a full-pack install may place **all three** packages (`init-workflows`
 Primary entry once wired: `bash …/host-workflows/scripts/host.sh -n N` from the product root.
 
 **Do not** force-install **loop-workflows** in this step (no “you need loop for READY”, no automatic second install). Mention loop only as optional context: chat users invoke `/loop-workflows` separately; shell workers need that skill on the agent they spawn, but **this skill never installs it for them**.
+
 #### 7b. Spawn interview
 
 > Explainer: The shell host needs a **one-line command string** that launches a clean one-shot agent session. Prompt is the final argument; the host never adds `--continue` / `--resume`. Missing spawn → HARD STOP (no silent default binary). Precedence when running the host:
