@@ -18,7 +18,7 @@ Every tick/session entry that participates in the host control plane **must** se
 | `SKIPPED` | Soft-skip that settled the ticket (e.g. spec/PRD) |
 | `COMPLETE` | Empty queue + no incomplete claim |
 | `BLOCKED` | Queue non-empty; nothing claimable |
-| `HARD_STOP` | Preflight / env / infra failure |
+| `HARD_STOP` | Terminal env / infra failure (unattended fail, or interactive abort / max retries) |
 | `FAILED` | Missing/unusable progress after spawn, or control-plane failure |
 
 Allowed values only: `SHIPPED` | `NEEDS_INFO` | `SKIPPED` | `COMPLETE` | `BLOCKED` | `HARD_STOP` | `FAILED`.

@@ -42,8 +42,9 @@ Spawn resolution (first non-empty wins):
 
 If all are missing → HARD STOP (clear error; no default agent binary).
 
-The host runs:  $SPAWN "<tick prompt>"
-  - Prompt is the final CLI argument.
+The host injects the tick prompt into the spawn recipe:
+  - If recipe contains {{PROMPT}}, replace it (quoted). Example: grok -p {{PROMPT}} --always-approve
+  - Else append prompt as the final CLI argument.
   - Host never adds --continue / --resume (clean one-shot context).
   - Unattended/edit flags belong inside the spawn string (recipe responsibility).
 
@@ -51,10 +52,11 @@ Workers must have loop-workflows installed. Progress path:
   <product>/.agent-workflows/progress.md
 
 Stop rules (progress outcome: + MAX only — host does not inspect the tracker queue):
-  COMPLETE   — latest progress outcome: COMPLETE (worker: empty queue + no incomplete claim)
-  BLOCKED    — stop
-  HARD_STOP  — stop
-  FAILED     — stop (also if progress missing/unusable after spawn)
+  COMPLETE   — if latest before any spawn in this run: stop without spawning (queue already done)
+  BLOCKED / HARD_STOP / FAILED — stop *after* a spawn that writes them (do not burn more ticks
+               in this process). A *new* host.sh invocation still spawns once so the operator
+               can retry after fixing env (stale HARD_STOP must not brick AFK forever).
+  FAILED     — also if progress missing/unusable after spawn
   MAX        — hit N with work still continuing (SHIPPED | NEEDS_INFO | SKIPPED)
   Process exit codes are not treated as tick success.
 EOF
@@ -177,6 +179,22 @@ host-workflows status
 EOF
 }
 
+# Run spawn with tick prompt. {{PROMPT}} → quoted substitution; else final argv.
+run_spawn() {
+  local spawn_cmd="$1"
+  local prompt="$2"
+  if [[ "$spawn_cmd" == *'{{PROMPT}}'* ]]; then
+    local quoted
+    quoted="$(printf '%q' "$prompt")"
+    spawn_cmd="${spawn_cmd//\{\{PROMPT\}\}/$quoted}"
+    # shellcheck disable=SC2086
+    bash -c "$spawn_cmd"
+  else
+    # shellcheck disable=SC2086
+    bash -c "$spawn_cmd \"\$1\"" _ "$prompt"
+  fi
+}
+
 main() {
   local max_n=1 flag_spawn="" cwd=""
   while [[ $# -gt 0 ]]; do
@@ -254,11 +272,14 @@ main() {
   log "- progress: $progress"
 
   while [[ "$ticks" -lt "$max_n" ]]; do
-    # Prefer COMPLETE / terminal outcomes before spending a spawn.
+    # Only COMPLETE skips spawn at the start of a tick: empty queue / work already done.
+    # Stale HARD_STOP / BLOCKED / FAILED from a previous host run must not block a new
+    # invocation (operator re-ran after fixing env). Those still stop remaining ticks
+    # *after* a spawn in this process (see below).
     last_outcome="$(latest_outcome "$progress" || true)"
-    if [[ -n "$last_outcome" ]] && is_stop_outcome "$last_outcome"; then
-      overall="$last_outcome"
-      log "stop before spawn: latest outcome=$last_outcome"
+    if [[ "$last_outcome" == "COMPLETE" ]]; then
+      overall="COMPLETE"
+      log "stop before spawn: latest outcome=COMPLETE"
       break
     fi
 
@@ -266,11 +287,9 @@ main() {
     before_fp="$(fingerprint_progress "$progress")"
 
     log "spawn tick $((ticks + 1))/$max_n ..."
-    # Prompt is final argument. Never inject --continue / --resume.
-    # Word-split the spawn command string (one-line recipes; no universal default).
+    # Inject prompt via {{PROMPT}} or final arg. Never --continue / --resume.
     set +e
-    # shellcheck disable=SC2086
-    bash -c "$spawn_cmd \"\$1\"" _ "$TICK_PROMPT"
+    run_spawn "$spawn_cmd" "$TICK_PROMPT"
     local spawn_ec=$?
     set -e
     ticks=$((ticks + 1))

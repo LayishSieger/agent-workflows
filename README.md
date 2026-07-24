@@ -32,7 +32,7 @@ later host runner fleet   → park, multi-spawn, rate-limit, stack engines
 
 | Unit | Role |
 |------|------|
-| **`init-workflows`** | Contracts first. **Offers** (confirm) `host-workflows` install + spawn interview. Does **not** force-install `loop-workflows` |
+| **`init-workflows`** | Contracts first (READY). Optional **S** chat / **H** shell AFK with skill scope **global** (default) or **product**; smart product spawn |
 | **`loop-workflows`** | Sole home of the **shared tick** and the **chat** entry (`once` / `max N`) |
 | **`host-workflows`** | Thin sequential **shell** host (`SKILL.md` + `scripts/host.sh`). Install never executes scripts |
 
@@ -67,16 +67,18 @@ Hard break — no compatibility flag. Pin a **0.2** install if same-session mult
 ### `/init-workflows`
 
 1. **Audits** a fixed checklist (concrete paths — not an “initialized” stamp)
-2. Reports present / missing / drift
-3. **Repairs** gaps (confirm before writing policy docs; **never wipe** existing `progress.md`)
-4. **Offers** (confirm) `host-workflows` install/wiring and a spawn interview (product file, machine file, or flag-only)
-5. **Re-audits** on disk and reports READY | NOT READY
+2. **Repairs** contracts + runtime (defaults write without a second confirm; never wipe `progress.md`; never overwrite non-empty policy without confirm)
+3. **Optional autonomy:** **S** chat only, or **H** shell AFK — pick skill scope **G** global (default, solo) or **P** product (team pin); install host+loop via CLI in that scope; keep/install/reinstall; no silent install
+4. **Smart spawn** (shell only): detect agent CLIs on PATH; write product `.agent-workflows/spawn` (always product-local)
+5. Status + short “what next” (one canonical `host.sh` path for the chosen scope)
 
-It does **not** implement issues, drain queues, or force-install `loop-workflows`.
+It does **not** implement issues, drain queues, or run `host.sh`. READY is contracts-only; loop/host/spawn are optional.
+
+**Product vs global skills:** policy + spawn + progress always live in the product. Skill packages may be global (`npx skills add -g …`, run `~/.agents/skills/host-workflows/scripts/host.sh`) or product (`npx skills add …` without `-g`, run `.agents/skills/host-workflows/scripts/host.sh`). Prefer one scope per product; dual installs should be resolved in init.
 
 ### `/loop-workflows` (chat)
 
-1. Preflight via product ops (`preflight`, `integration-base`, …)
+1. Preflight via product ops (`preflight`, `integration-base`, …). On failure in an interactive **once** run: pause and ask **retry** / **abort** (no progress until abort or retries exhausted). Unattended host workers HARD_STOP immediately.
 2. Resume at most one incomplete claim, else pick oldest claimable ready work
 3. Soft-skip open publish artifacts, open blockers, and skill-side **spec/PRD** bodies
 4. Implement one ticket (typecheck, focused tests, broader pass when the product has them); create publish artifact; `ready-for-human`
@@ -111,15 +113,17 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 --spawn / AGENT_SPAWN  >  product .agent-workflows/spawn  >  machine ~/.config/agent-workflows/spawn
 ```
 
-All missing → **HARD STOP** (no silent default binary). Host runs `$SPAWN "<tick prompt>"` with prompt as the final argument; never adds `--continue` / `--resume`.
+All missing → **HARD STOP** (no silent default binary). Host injects the tick prompt into the spawn recipe: if the line contains `{{PROMPT}}`, replace it (quoted); else append as the final argument. Never adds `--continue` / `--resume`.
 
-Spawn is **human-owned config** (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners you may choose (adjust for your agent version):
+Spawn is **human-owned config** (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners (adjust for your agent version):
 
 ```bash
 # product or machine file — one line only
-cursor-agent -p --force --trust --output-format text
-# claude -p --permission-mode acceptEdits --output-format text
-# grok -p --always-approve --output-format plain
+# Grok: -p requires the prompt as its value → use {{PROMPT}}
+grok -p {{PROMPT}} --always-approve --output-format plain
+# cursor-agent -p --force --trust --output-format text
+# Claude AFK: acceptEdits blocks Bash/gh — use bypassPermissions for shell host
+# claude -p {{PROMPT}} --permission-mode bypassPermissions --output-format text
 # codex exec --sandbox workspace-write --ephemeral
 ```
 
@@ -187,7 +191,13 @@ bash ~/.agents/skills/host-workflows/scripts/host.sh -n 3
 - **Greenfield**: init interview (tracker → labels → domain), then create issues, then chat loop and/or shell host.
 - **Contracts only**: run init and decline the host/spawn offer; do not install loop if you only need policy docs.
 
-Dogfood: real product with GitHub issues, once + multi-N via workers (chat or shell).
+Dogfood: real product with GitHub issues, once + multi-N via workers (chat or shell). Suite under [`tests/dogfood/`](./tests/dogfood/) (throwaway GH repo + Grok host + fixture issues).
+
+```bash
+bash tests/dogfood/run-automated.sh    # host unit tests + ops contract
+bash tests/dogfood/setup-sandbox.sh    # private product + labels + issues
+# then follow tests/dogfood/run-dogfood.md in the product dir
+```
 
 ## Repository layout
 
@@ -208,6 +218,9 @@ agent-workflows/
     check-ops-contract.sh # structural check for tracker ops seeds
   tests/
     host-workflows/       # fake-SPAWN shell tests
+    dogfood/              # E2E suite: sandbox + playbook + Tier 0 gate
+  fixtures/
+    dogfood-product/      # minimal Node product for dogfood issues
 ```
 
 ## Out of scope (still)

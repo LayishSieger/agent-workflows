@@ -37,11 +37,11 @@ Shared failure words: **HARD_STOP** | **SOFT_SKIP** | **NEEDS_INFO** | **OK**.
 - **Steps:**
   1. Confirm git root: `git rev-parse --show-toplevel`.
   2. Confirm working tree is clean when the skill requires it: `git status --porcelain` empty.
-  3. Confirm `gh` is available and authenticated: `gh auth status`. On failure → **HARD_STOP** (human remediates auth / environment; do not escalate sandbox privileges).
+  3. Confirm `gh` is available and authenticated: `gh auth status`.
   4. Confirm origin is GitHub-shaped (`git remote -v` / `gh repo view`).
   5. Confirm this policy file and `docs/agents/triage-labels.md` exist and are non-empty.
 - **Success:** Tracker and env usable → **OK**. Integration branch name may be resolved next via **integration-base**.
-- **Failure:** Missing git root, dirty tree (when required), `gh` missing/unauthenticated, non-GitHub remote, or missing policy → **HARD_STOP**.
+- **Failure:** Missing git root, dirty tree (when required), `gh` missing/unauthenticated, non-GitHub remote, or missing policy → **Failure** (not OK). The calling skill maps Failure (interactive wait vs terminal progress `HARD_STOP`).
 
 ## integration-base
 
@@ -155,7 +155,7 @@ Shared failure words: **HARD_STOP** | **SOFT_SKIP** | **NEEDS_INFO** | **OK**.
      ```
   3. Do **not** merge the PR; do **not** close the issue as completed (human review gate).
 - **Success:** Durable open PR URL/id, linked to `N`, targeting integration base, open for review → **OK**. Skill then runs **label-transition** → ready-for-human and progress `outcome: SHIPPED`.
-- **Failure:** Cannot open PR / push → **NEEDS_INFO** path for the tick (comment + needs-info; no success artifact). Auth/tooling broken may escalate to **HARD_STOP**.
+- **Failure:** Cannot open PR / push → **NEEDS_INFO** path for the tick (comment + needs-info; no success artifact). Auth/tooling broken may map to progress **HARD_STOP** (skill decides).
 
 ---
 

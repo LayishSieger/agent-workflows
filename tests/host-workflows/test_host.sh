@@ -252,6 +252,26 @@ echo "== prompt placement =="
   unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
 }
 
+# {{PROMPT}} placeholder (Grok-style: prompt is a flag value, not trailing arg only)
+{
+  product="$(make_product)"
+  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  log="$(mktemp)"
+  export FAKE_SPAWN_LOG="$log"
+  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
+  export FAKE_SPAWN_OUTCOME="COMPLETE"
+  set +e
+  # Placeholder after a flag so argv is: --flag <prompt>
+  run_host "$product" -n 1 --spawn "$FAKE --flag {{PROMPT}}" >/dev/null 2>&1
+  set -e
+  argc="$(grep '^argc=' "$log" | head -1 | cut -d= -f2)"
+  assert_eq "placeholder spawn argc=2 (--flag + prompt)" "2" "$argc"
+  assert_eq "placeholder first arg is --flag" "--flag" "$(grep '^arg1=' "$log" | head -1 | sed 's/^arg1=//')"
+  assert_contains "placeholder second arg is prompt" "loop-workflows" "$(grep '^arg2=' "$log" | head -1 | sed 's/^arg2=//')"
+  rm -rf "$product" "$HOME"
+  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+}
+
 # --- stop rules ---
 echo "== stop rules =="
 
@@ -279,6 +299,32 @@ echo "== stop rules =="
   fi
   rm -rf "$product" "$HOME"
   unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS
+}
+
+# Stale HARD_STOP must not brick a new host invocation (retry after env fix)
+{
+  product="$(make_product)"
+  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  write_progress_outcome "$product/.agent-workflows/progress.md" "HARD_STOP"
+  log="$(mktemp)"
+  export FAKE_SPAWN_LOG="$log"
+  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
+  export FAKE_SPAWN_OUTCOME="COMPLETE"
+  set +e
+  out="$(run_host "$product" -n 1 --spawn "$FAKE" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "stale-HARD_STOP still spawns exit 0" "0" "$ec"
+  assert_contains "stale-HARD_STOP then COMPLETE" "COMPLETE" "$out"
+  if [[ ! -s "$log" ]]; then
+    echo "  FAIL: should spawn despite stale HARD_STOP"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: spawn despite stale HARD_STOP"
+    PASS=$((PASS + 1))
+  fi
+  rm -rf "$product" "$HOME"
+  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
 }
 
 # BLOCKED from progress after spawn

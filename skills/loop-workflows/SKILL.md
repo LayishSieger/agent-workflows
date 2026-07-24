@@ -49,10 +49,10 @@ Terminal / control-plane outcomes (progress `outcome:`):
 | **SKIPPED** | Soft-skip that settled the ticket (e.g. spec/PRD → ready-for-human) |
 | **COMPLETE** | Empty queue + no incomplete claim |
 | **BLOCKED** | Queue non-empty; nothing claimable |
-| **HARD_STOP** | Preflight / env / infra failure |
+| **HARD_STOP** | Terminal env / infra failure (after unattended fail, or interactive **abort** / max preflight retries) |
 | **FAILED** | Control-plane failure (e.g. missing progress after a scheduled worker) |
 
-Scheduler-only labels (status line, not always progress enum): **MAX** when N hit with work left.
+Scheduler-only labels (status line, not always progress enum): **MAX** when N hit with work left; chat-only **WAITING** while paused on the user (never a progress `outcome:`).
 
 ## Policy discovery (worker)
 
@@ -73,8 +73,19 @@ Product root (`git rev-parse --show-toplevel`). This path runs **exactly one** s
 
 Run policy ops:
 
-1. **preflight** — on Failure **HARD_STOP** → progress `outcome: HARD_STOP`, stop.
+1. **preflight** — on Failure, apply **Preflight failure handling** below (do **not** always write progress immediately).
 2. **integration-base** — remember base branch name for feature branches and publish.
+
+#### Preflight failure handling
+
+Policy **preflight** only reports Success / Failure. This skill maps Failure:
+
+| Context | Behavior |
+|---------|----------|
+| **Interactive** — chat **once** (default `/loop-workflows` with a human in the session) | **Do not** append progress yet. Tell the user preflight failed (one-line reason). Ask them to fix the environment (auth, tool access, clean tree, etc.) then reply **retry** or **abort**. On **retry**, re-run **preflight** (up to **3** retries after the first failure). On **abort** or retries exhausted → progress `outcome: HARD_STOP`, **§5**, stop. While waiting, status may show `last_outcome: (waiting on user — preflight)` and chat-only `overall: WAITING` — **not** a progress enum. |
+| **Unattended** — host-spawned one-tick worker, non-interactive worker, or no user to wait on | Progress `outcome: HARD_STOP` immediately, **§5**, stop. |
+
+Do **not** invent credential storage or IDE-specific privilege instructions. Report the failing check factually; the human chooses how to fix access.
 
 **Done when:** env usable; integration base known; progress/logs ready.
 
@@ -197,10 +208,12 @@ loop-workflows status
 - mode: once | worker-one-tick | max N (parent)
 - ticks: <completed> / <N or 1>
 - last_issue: #N | none
-- last_outcome: SHIPPED | NEEDS_INFO | SKIPPED | COMPLETE | BLOCKED | HARD_STOP | FAILED | …
+- last_outcome: SHIPPED | NEEDS_INFO | SKIPPED | COMPLETE | BLOCKED | HARD_STOP | FAILED | (waiting on user — preflight) | …
 - queue ready-for-agent: <count>
-- overall: COMPLETE | BLOCKED | MAX | HARD_STOP | FAILED | (partial if max N mid-run)
+- overall: COMPLETE | BLOCKED | MAX | HARD_STOP | FAILED | WAITING | (partial if max N mid-run)
 ```
+
+`WAITING` is **chat status only** while paused on the user — never write `outcome: WAITING` to progress. Hosts key off progress `outcome:` only.
 
 Empty queue COMPLETE: say so; suggest creating tickets that match `docs/agents` triage (planning skills install separately). This skill never force-installs companions.
 
@@ -213,12 +226,12 @@ Parent **only schedules**. Parent **does not** implement N tickets in one contex
 ### Parent steps
 
 1. Product root; default nothing to implement in parent.
-2. Optional cheap preflight: if **list-queue** empty and **incomplete-claim** empty → COMPLETE without spawning (prefer detect **before** spawn).
+2. Optional cheap preflight: if **list-queue** empty and **incomplete-claim** empty → COMPLETE without spawning (prefer detect **before** spawn). If a cheap env check fails and a human is present, use the same interactive **retry** / **abort** pattern as §1 (no progress until abort / max retries).
 3. For `i` from 1 to N:
    - If stop rule hits (below), break.
    - Spawn a **fresh one-tick worker** (subagent / clean session) with:
      - product cwd
-     - instruction: **run exactly one shared tick** (this skill’s **once** / worker path)
+     - instruction: **run exactly one shared tick** as an **unattended** worker (this skill’s worker path — preflight Failure → immediate HARD_STOP)
      - policy discovery in-repo (`docs/agents/*`)
    - **Do not** pass: issue id, remaining N, host queue blob, stack base.
    - After worker returns: read **latest** progress `outcome:` (do not require full history).
@@ -228,9 +241,10 @@ Parent **only schedules**. Parent **does not** implement N tickets in one contex
 ### Worker prompt (conceptual)
 
 ```text
-In this product repo, run loop-workflows shared tick once:
+In this product repo, run loop-workflows shared tick once (unattended worker):
 resume | pick → claim → implement → publish → progress.
 Discover policy under docs/agents/*. Call ops and triage roles by name only.
+On preflight Failure: progress HARD_STOP immediately (do not wait on a user).
 Exactly one tick; then stop.
 ```
 
