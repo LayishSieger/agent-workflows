@@ -2,3 +2,9 @@
 .agents/
 .claude/
 skills-lock.json
+
+# macOS
+.DS_Store
+
+# dogfood last-run evidence (local)
+tests/dogfood/last-run/
