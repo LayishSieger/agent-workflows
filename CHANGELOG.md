@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+### Added
+
+- Design freeze [docs/v0.3.md](./docs/v0.3.md): policy-driven shared tick, dual schedulers, three packages
+- Tracker **ops contract** in product policy seeds (ten named ops with Input / Steps / Success / Failure)
+  - GitHub seed fully filled (reference instance)
+  - Local seed: same headings; stub bodies OK in 0.3
+  - Structural check: `scripts/check-ops-contract.sh`
+- Progress control plane: required **`outcome:`** enum on entries (`SHIPPED` | `NEEDS_INFO` | `SKIPPED` | `COMPLETE` | `BLOCKED` | `HARD_STOP` | `FAILED`); template documents host semantics
+- Skill package **`host-workflows`**:
+  - Thin sequential shell host (`scripts/host.sh`) for AFK multi-tick without a chat parent
+  - Spawn resolution: `--spawn` / `AGENT_SPAWN` > product `.agent-workflows/spawn` > machine `~/.config/agent-workflows/spawn`
+  - Stop rules driven by progress `outcome:`; process exit ≠ tick success
+  - Install never executes the host script
+  - Fake-SPAWN shell tests under `tests/host-workflows/`
+- `init-workflows`: contracts-first READY; optional **S** chat / **H** shell AFK; skills via confirmed `npx skills add --skill …` (keep/install/reinstall); smart spawn from PATH-detected agents → product `.agent-workflows/spawn`
+- README: three packages, dual entry (chat vs shell), multi-N break, install and usage for 0.3
+
+### Changed
+
+- **`loop-workflows` rewrite (breaking for max N):**
+  - Shared tick is tracker-agnostic (op names + triage roles only; CLIs live in product policy)
+  - **once** = one in-session tick (unchanged shape)
+  - **max N** = parent **only schedules** fresh one-tick workers — no more N implements stuffed into one session context
+  - Hard break from 0.2 same-session multi-N; pin 0.2 install if old behavior is required
+- Claim / publish product meaning: leave-queue claim (no `claimed` role); success = create-publish-artifact → ready-for-human; fail → needs-info without re-queue
+- Status: hub is **v0.3** (policy-driven tick + dual schedulers), not v0.2 consumer-only
+- Security wording (skills.sh): ticket text is untrusted data; no free-form shell from issues; spawn recipes with unattended flags live in human config / README only
+- `init-workflows` UX: batch contract questions; no force-install; CLI not hub-clone default; spawn simplified (product file + agent detection)
+- `host-workflows`: spawn recipes may use `{{PROMPT}}` for CLIs that need the prompt as a flag value (e.g. `grok -p {{PROMPT}}`); else prompt remains final arg
+- `init-workflows`: progress.md existence via shell only (gitignored; never wipe if present — Cursor/sandbox can hide ignored files)
+- Claude AFK spawn preset: `bypassPermissions` (not `acceptEdits` — that blocks `gh`/Bash)
+- `host-workflows`: pre-spawn stop only on **COMPLETE**; stale HARD_STOP/BLOCKED/FAILED no longer brick a new host run
+- `init-workflows`: shell AFK skill scope **G** global (default) or **P** product; matching CLI (`-g` or not), host-entry path, and gitignore; dual-install warn; spawn always product-local
+- `loop-workflows` chat **once**: preflight Failure → ask user **retry** / **abort** (up to 3 retries); no progress until abort or retries exhausted; unattended workers / host still immediate **HARD_STOP**
+- GitHub **preflight** op: reports Failure only; calling skill maps interactive wait vs terminal HARD_STOP
+
 ## 0.2.0 — unreleased
 
 ### Added

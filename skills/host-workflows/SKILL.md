@@ -64,52 +64,19 @@ Host runs:
 $SPAWN "<tick prompt>"
 ```
 
-- Prompt is the **final** CLI argument.
+- Tick prompt injection:
+  - If the recipe contains `{{PROMPT}}`, replace it (shell-quoted). Use when the CLI needs the prompt as a **flag value** (e.g. `grok -p {{PROMPT}} …`).
+  - Else append the prompt as the **final** CLI argument.
 - Host **never** adds `--continue` / `--resume` (clean one-shot context).
-- Unattended/edit flags (`--force`, `--always-approve`, etc.) live **inside** the spawn string.
-
-### Recipes (pin binary names)
-
-Examples only — copy into a spawn file or `--spawn`. Adjust flags for your agent version.
-
-**Cursor Agent CLI** (prefer `cursor-agent` over bare `agent`):
-
-```bash
-cursor-agent -p --force --trust --output-format text
-```
-
-**Claude Code:**
-
-```bash
-claude -p --permission-mode acceptEdits --output-format text
-```
-
-**Grok Build** (prefer `grok` over bare `agent` if both exist):
-
-```bash
-grok -p --always-approve --output-format plain
-```
-
-**Codex CLI:**
-
-```bash
-codex exec --sandbox workspace-write --ephemeral
-```
-
-Write one line, for example:
-
-```bash
-mkdir -p .agent-workflows
-echo 'cursor-agent -p --force --trust --output-format text' > .agent-workflows/spawn
-```
+- Any unattended flags belong in the **human-owned** spawn string (flag / env / spawn file), not in this skill.
 
 ## What the host does
 
 Sequential `1..N`:
 
 1. Resolve spawn (HARD STOP if missing).
-2. If latest progress `outcome:` is already **COMPLETE** / **BLOCKED** / **HARD_STOP** / **FAILED** → stop **before** spawn when known.
-3. Spawn one-shot worker with fixed “exactly one tick” prompt (final arg).
+2. If latest progress `outcome:` is **COMPLETE** → stop **before** spawn (no work left).
+3. Spawn one-shot worker with fixed “exactly one tick” prompt (`{{PROMPT}}` or final arg).
 4. Re-read `.agent-workflows/progress.md` latest `outcome:`.
 5. Apply stop rules; else continue until `N`.
 
@@ -119,11 +86,13 @@ Sequential `1..N`:
 
 | Condition | Overall |
 |-----------|---------|
-| Latest progress `outcome:` **COMPLETE** (worker reported empty ready-queue + no incomplete claim; prefer before spawn) | **COMPLETE** |
-| Latest `outcome:` **BLOCKED** / **HARD_STOP** / **FAILED** | that outcome |
-| **SHIPPED** / **NEEDS_INFO** / **SKIPPED** and `i < N` | continue |
+| Latest `outcome:` **COMPLETE** before spawn (prefer no spawn) | **COMPLETE** |
+| After a spawn: **BLOCKED** / **HARD_STOP** / **FAILED** | that outcome (stops remaining ticks **this process** only) |
+| After a spawn: **SHIPPED** / **NEEDS_INFO** / **SKIPPED** and `i < N` | continue |
 | Hit **N** with work still continuing | **MAX** |
 | Missing/unusable progress after a spawn that should have written | **FAILED** |
+
+A **new** `host.sh` run still spawns once even if progress’s latest line is a stale **HARD_STOP** / **BLOCKED** / **FAILED** (operator fixed env and re-invoked). Only **COMPLETE** skips spawn without trying.
 
 **Process exit of the agent ≠ tick success.** The host may log a non-zero exit but drives the loop from progress only.
 

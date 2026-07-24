@@ -26,7 +26,7 @@ Shared failure words: **HARD_STOP** | **SOFT_SKIP** | **NEEDS_INFO** | **OK**.
 - **Input:** Product repo root; issues root path from this file.
 - **Steps:** _(stub — not proven in 0.3)_ Verify issues root exists and is writable; confirm policy files present.
 - **Success:** Local tracker usable → **OK**.
-- **Failure:** Missing root or unreadable tree → **HARD_STOP**.
+- **Failure:** Missing root or unreadable tree → **Failure** (not OK). The calling skill maps Failure (interactive wait vs terminal progress `HARD_STOP`).
 
 ## integration-base
 
