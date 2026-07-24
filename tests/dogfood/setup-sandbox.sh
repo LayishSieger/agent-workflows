@@ -127,10 +127,11 @@ case "$SCOPE" in
     ;;
 esac
 
-# Product spawn for Grok (human-owned recipe; host substitutes {{PROMPT}})
+# Product spawn for Grok (human-owned recipe; host substitutes {{PROMPT}}).
+# Single source: tests/dogfood/spawn-recipe.txt (shared by docs + this setup).
 mkdir -p .agent-workflows/logs
 if [[ ! -f .agent-workflows/spawn ]]; then
-  printf '%s\n' 'grok -p {{PROMPT}} --always-approve --output-format plain' >.agent-workflows/spawn
+  tr -d '\r' <"$HUB_DIR/tests/dogfood/spawn-recipe.txt" | head -1 >.agent-workflows/spawn
 fi
 # progress left for init to create (or agent creates) — do not pre-seed unless testing I2
 

@@ -61,16 +61,16 @@ Read:
   - If **both** global and product copies exist: note both paths (dual install — pick one scope later)
 - **Agent CLIs on PATH** (`command -v` only; do **not** treat bare `agent` as a hit):
 
-| Binary | Preset one-liner (product spawn) |
-|--------|----------------------------------|
-| `grok` | `grok -p {{PROMPT}} --always-approve --output-format plain` |
-| `cursor-agent` | `cursor-agent -p --force --trust --output-format text` |
-| `claude` | `claude -p {{PROMPT}} --permission-mode bypassPermissions --output-format text` |
-| `codex` | `codex exec --sandbox workspace-write --ephemeral` |
+| Binary | Preset shape (product spawn — no trust/unattended flags here) |
+|--------|--------------------------------------------------------------|
+| `grok` | `grok -p {{PROMPT}} --output-format plain` |
+| `cursor-agent` | `cursor-agent -p --output-format text` |
+| `claude` | `claude -p {{PROMPT}} --output-format text` |
+| `codex` | `codex exec --ephemeral` |
 
 `{{PROMPT}}` = host substitutes the tick prompt (required for CLIs where `-p` takes the prompt as a value, e.g. Grok). Without it, host appends the prompt as the final argument.
 
-**AFK note:** presets must allow tracker CLIs (`gh`) and file writes. For Claude, `acceptEdits` is **not** enough (blocks Bash/`gh`) — use `bypassPermissions` (or equivalent) for shell host. Grok `--always-approve` / Cursor `--force --trust` are the same idea.
+**AFK note:** shell host needs unattended/trust flags so the worker can run tracker CLIs (`gh`) and write files. Those flags are **human-owned** — copy from hub README spawn examples into the spawn line (or paste a full custom line). Do not invent trust flags from this skill.
 
 ### 2. Audit and present
 
@@ -277,11 +277,11 @@ If product spawn **exists** and non-empty: show contents → **keep** \| **repla
 
 | Detected | UX |
 |----------|-----|
-| **Exactly one** | Propose that binary’s preset. Ask: **yes** (write) \| **edit** (user pastes full line) \| **skip** |
-| **Two or more** | Numbered menu of **only** detected presets + **custom** + **skip** |
+| **Exactly one** | Propose that binary’s **shape** preset; remind user to add AFK flags from README before confirming. Ask: **yes** (write shape) \| **edit** (user pastes full AFK line) \| **skip** |
+| **Two or more** | Numbered menu of **only** detected shape presets + **custom** + **skip** |
 | **Zero** | Ask **custom** paste or **skip** (no fake presets) |
 
-Write **exactly one line** to `.agent-workflows/spawn` on yes/preset/custom. Create `.agent-workflows/` if needed.
+Prefer **edit**/custom when the user wants a working AFK line (README recipes). Write **exactly one line** to `.agent-workflows/spawn` on yes/preset/custom. Create `.agent-workflows/` if needed.
 
 Optional one-liner only if user asks: also write machine `~/.config/agent-workflows/spawn`. Do **not** open with product-vs-machine-vs-flag by default.
 

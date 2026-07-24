@@ -19,7 +19,7 @@ Fill `$PRODUCT_DIR/dogfood-output/report.md` as you go. Full matrix: [scenarios.
 |---------|--------|
 | Skill scope | **P (product)** for isolation |
 | Init autonomy | **S** for I1; **H**+**P** for I4 |
-| Spawn | `grok -p {{PROMPT}} --always-approve --output-format plain` |
+| Spawn | shared recipe in [`spawn-recipe.txt`](./spawn-recipe.txt) (setup writes it to product `.agent-workflows/spawn`) |
 | Loop | once for L1/L2; skip L3–L6 unless full suite |
 | Host | H1 + H2 only unless full suite |
 
@@ -180,7 +180,7 @@ bash "$HOST" -n 1 --cwd "$PRODUCT_DIR" 2>&1 | tee dogfood-output/h2.txt
 |----|----------------|
 | H3 | `-n 2` with two ready issues |
 | H5 | write HARD_STOP to progress; re-run host → still spawns |
-| H6 | `--spawn 'grok -p {{PROMPT}} --always-approve --output-format plain'` |
+| H6 | `--spawn "$(cat spawn-recipe.txt)"` (shared recipe as an explicit flag override) |
 
 ---
 

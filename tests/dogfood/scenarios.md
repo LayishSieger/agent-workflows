@@ -63,11 +63,7 @@ Source of truth for `tests/dogfood/`. Execute via `run-automated.sh` (Tier 0) an
 | H5 | stale HARD_STOP then re-run | new invocation still spawns |
 | H6 | bad product spawn + `--spawn` good | flag wins |
 
-**Default Grok spawn line:**
-
-```bash
-grok -p {{PROMPT}} --always-approve --output-format plain
-```
+**Default Grok spawn line:** shared recipe in [`spawn-recipe.txt`](./spawn-recipe.txt) (also written to product `.agent-workflows/spawn` by `setup-sandbox.sh`).
 
 ## Tier 5 — Security
 

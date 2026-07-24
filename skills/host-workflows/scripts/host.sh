@@ -43,10 +43,10 @@ Spawn resolution (first non-empty wins):
 If all are missing → HARD STOP (clear error; no default agent binary).
 
 The host injects the tick prompt into the spawn recipe:
-  - If recipe contains {{PROMPT}}, replace it (quoted). Example: grok -p {{PROMPT}} --always-approve
+  - If recipe contains {{PROMPT}}, replace it (quoted). Example: grok -p {{PROMPT}} --output-format plain
   - Else append prompt as the final CLI argument.
   - Host never adds --continue / --resume (clean one-shot context).
-  - Unattended/edit flags belong inside the spawn string (recipe responsibility).
+  - Unattended/trust flags belong in the human-owned spawn string only (see hub README examples).
 
 Workers must have loop-workflows installed. Progress path:
   <product>/.agent-workflows/progress.md

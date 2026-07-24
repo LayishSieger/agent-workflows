@@ -9,6 +9,10 @@ FAKE="$ROOT/tests/host-workflows/fake-spawn.sh"
 PASS=0
 FAIL=0
 
+# Case fixture globals (set by setup_case)
+product=""
+log=""
+
 assert_eq() {
   local name="$1" expected="$2" actual="$3"
   if [[ "$expected" == "$actual" ]]; then
@@ -99,15 +103,45 @@ write_progress_outcome() {
 EOF
 }
 
+# setup_case [outcome]
+# Creates product + isolated HOME + spawn log; wires FAKE_SPAWN_* when outcome is set
+# (omit outcome to leave FAKE_SPAWN_OUTCOME unset, e.g. skip-progress / no-spawn cases).
+setup_case() {
+  local outcome="${1-}"
+  product="$(make_product)"
+  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  log="$(mktemp)"
+  unset AGENT_SPAWN FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME \
+    FAKE_SPAWN_SKIP_PROGRESS FAKE_SPAWN_EXIT || true
+  export FAKE_SPAWN_LOG="$log"
+  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
+  if [[ -n "$outcome" ]]; then
+    export FAKE_SPAWN_OUTCOME="$outcome"
+  fi
+}
+
+teardown_case() {
+  rm -rf "${product:-}" "${HOME:-}"
+  unset AGENT_SPAWN FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME \
+    FAKE_SPAWN_SKIP_PROGRESS FAKE_SPAWN_EXIT || true
+  product=""
+  log=""
+}
+
+# Decoy machine + product spawn files (resolution-order tests).
+write_decoy_spawns() {
+  mkdir -p "$HOME/.config/agent-workflows"
+  echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
+  echo "product-should-not-run" >"$product/.agent-workflows/spawn"
+}
+
 # --- spawn resolution ---
 echo "== spawn resolution =="
 
 # All missing → HARD STOP, non-zero, no spawn
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  unset AGENT_SPAWN || true
-  log="$(mktemp)"
+  setup_case
+  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS || true
   set +e
   out="$(run_host "$product" -n 1 2>&1)"
   ec=$?
@@ -115,28 +149,20 @@ echo "== spawn resolution =="
   assert_eq "missing spawn exit non-zero" "1" "$ec"
   assert_contains "missing spawn HARD STOP message" "HARD STOP" "$out"
   assert_contains "missing spawn mentions spawn" "spawn" "$(echo "$out" | tr '[:upper:]' '[:lower:]')"
-  rm -rf "$product" "$HOME"
+  teardown_case
 }
 
 # --spawn flag wins over product + machine + env
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  mkdir -p "$HOME/.config/agent-workflows"
-  echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
-  echo "product-should-not-run" >"$product/.agent-workflows/spawn"
+  setup_case SHIPPED
+  write_decoy_spawns
   export AGENT_SPAWN="env-should-not-run"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="SHIPPED"
   set +e
   out="$(run_host "$product" -n 1 --spawn "$FAKE" 2>&1)"
   ec=$?
   set -e
   assert_eq "flag spawn exit 0 (SHIPPED then max)" "0" "$ec"
   assert_contains "flag spawn used fake" "argc=" "$(cat "$log" 2>/dev/null || true)"
-  # Ensure wrong binaries not invoked as first token — log should only be from FAKE
   if grep -q 'machine-should-not-run\|product-should-not-run\|env-should-not-run' "$log" 2>/dev/null; then
     echo "  FAIL: wrong spawn path used"
     FAIL=$((FAIL + 1))
@@ -144,22 +170,14 @@ echo "== spawn resolution =="
     echo "  PASS: flag beats product/machine/env"
     PASS=$((PASS + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset AGENT_SPAWN FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # AGENT_SPAWN wins over product + machine
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  mkdir -p "$HOME/.config/agent-workflows"
-  echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
-  echo "product-should-not-run" >"$product/.agent-workflows/spawn"
-  log="$(mktemp)"
+  setup_case COMPLETE
+  write_decoy_spawns
   export AGENT_SPAWN="$FAKE"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
   set +e
   out="$(run_host "$product" -n 1 2>&1)"
   ec=$?
@@ -173,22 +191,15 @@ echo "== spawn resolution =="
     echo "  PASS: AGENT_SPAWN beats product/machine files"
     PASS=$((PASS + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset AGENT_SPAWN FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # product file wins over machine
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  setup_case COMPLETE
   mkdir -p "$HOME/.config/agent-workflows"
   echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
   echo "$FAKE" >"$product/.agent-workflows/spawn"
-  unset AGENT_SPAWN || true
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
   set +e
   out="$(run_host "$product" -n 1 2>&1)"
   set -e
@@ -200,38 +211,25 @@ echo "== spawn resolution =="
     echo "  PASS: product spawn beats machine"
     PASS=$((PASS + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # machine file used when product missing
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  setup_case COMPLETE
   mkdir -p "$HOME/.config/agent-workflows"
   echo "$FAKE" >"$HOME/.config/agent-workflows/spawn"
-  unset AGENT_SPAWN || true
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
   set +e
   out="$(run_host "$product" -n 1 2>&1)"
   set -e
   assert_contains "machine spawn used fake" "argc=" "$(cat "$log")"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # --- prompt as final arg; no resume/continue ---
 echo "== prompt placement =="
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
+  setup_case COMPLETE
   set +e
   run_host "$product" -n 1 --spawn "$FAKE" >/dev/null 2>&1
   set -e
@@ -245,21 +243,14 @@ echo "== prompt placement =="
     echo "  PASS: no resume/continue flags from host"
     PASS=$((PASS + 1))
   fi
-  # single arg total (prompt only) when spawn is bare script
   argc="$(grep '^argc=' "$log" | head -1 | cut -d= -f2)"
   assert_eq "bare spawn receives one arg (prompt)" "1" "$argc"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # {{PROMPT}} placeholder (Grok-style: prompt is a flag value, not trailing arg only)
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
+  setup_case COMPLETE
   set +e
   # Placeholder after a flag so argv is: --flag <prompt>
   run_host "$product" -n 1 --spawn "$FAKE --flag {{PROMPT}}" >/dev/null 2>&1
@@ -268,8 +259,7 @@ echo "== prompt placement =="
   assert_eq "placeholder spawn argc=2 (--flag + prompt)" "2" "$argc"
   assert_eq "placeholder first arg is --flag" "--flag" "$(grep '^arg1=' "$log" | head -1 | sed 's/^arg1=//')"
   assert_contains "placeholder second arg is prompt" "loop-workflows" "$(grep '^arg2=' "$log" | head -1 | sed 's/^arg2=//')"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # --- stop rules ---
@@ -277,12 +267,8 @@ echo "== stop rules =="
 
 # COMPLETE before spawn (prefer no spawn)
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  setup_case
   write_progress_outcome "$product/.agent-workflows/progress.md" "COMPLETE"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
   set +e
   out="$(run_host "$product" -n 3 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -297,19 +283,13 @@ echo "== stop rules =="
     echo "  PASS: no spawn when progress already COMPLETE"
     PASS=$((PASS + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS
+  teardown_case
 }
 
 # Stale HARD_STOP must not brick a new host invocation (retry after env fix)
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  setup_case COMPLETE
   write_progress_outcome "$product/.agent-workflows/progress.md" "HARD_STOP"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
   set +e
   out="$(run_host "$product" -n 1 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -323,18 +303,12 @@ echo "== stop rules =="
     echo "  PASS: spawn despite stale HARD_STOP"
     PASS=$((PASS + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # BLOCKED from progress after spawn
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="BLOCKED"
+  setup_case BLOCKED
   set +e
   out="$(run_host "$product" -n 3 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -349,18 +323,12 @@ echo "== stop rules =="
     echo "  FAIL: BLOCKED should be non-zero"
     FAIL=$((FAIL + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # HARD_STOP from progress
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="HARD_STOP"
+  setup_case HARD_STOP
   set +e
   out="$(run_host "$product" -n 3 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -375,18 +343,12 @@ echo "== stop rules =="
     echo "  FAIL: HARD_STOP should be non-zero"
     FAIL=$((FAIL + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # FAILED from progress
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="FAILED"
+  setup_case FAILED
   set +e
   out="$(run_host "$product" -n 3 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -401,17 +363,12 @@ echo "== stop rules =="
     echo "  FAIL: FAILED should be non-zero"
     FAIL=$((FAIL + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # Missing progress after spawn → FAILED
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
+  setup_case
   export FAKE_SPAWN_SKIP_PROGRESS=1
   set +e
   out="$(run_host "$product" -n 2 --spawn "$FAKE" 2>&1)"
@@ -427,18 +384,12 @@ echo "== stop rules =="
     echo "  FAIL: missing progress should be non-zero"
     FAIL=$((FAIL + 1))
   fi
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_SKIP_PROGRESS
+  teardown_case
 }
 
 # MAX after N continuing outcomes
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="SHIPPED"
+  setup_case SHIPPED
   set +e
   out="$(run_host "$product" -n 2 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -447,18 +398,12 @@ echo "== stop rules =="
   assert_contains "MAX overall" "MAX" "$out"
   spawns="$(grep -c '^argc=' "$log" || true)"
   assert_eq "MAX runs exactly N spawns" "2" "$spawns"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # Process exit ≠ tick success: non-zero spawn exit with SHIPPED still continues control plane
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="SHIPPED"
+  setup_case SHIPPED
   export FAKE_SPAWN_EXIT=42
   set +e
   out="$(run_host "$product" -n 1 --spawn "$FAKE" 2>&1)"
@@ -467,18 +412,12 @@ echo "== stop rules =="
   # Host overall MAX (hit N with SHIPPED), not FAILED solely due to exit 42
   assert_contains "process exit ignored for success" "MAX" "$out"
   assert_eq "process exit 42 still host exit 0 for MAX" "0" "$ec"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME FAKE_SPAWN_EXIT
+  teardown_case
 }
 
 # COMPLETE after spawn stops without further ticks
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
+  setup_case COMPLETE
   set +e
   out="$(run_host "$product" -n 5 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -487,14 +426,12 @@ echo "== stop rules =="
   assert_contains "COMPLETE-after-spawn status" "COMPLETE" "$out"
   spawns="$(grep -c '^argc=' "$log" || true)"
   assert_eq "COMPLETE after one spawn no more" "1" "$spawns"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # Template multi-choice outcome line must not be treated as COMPLETE/SHIPPED control plane
 {
-  product="$(make_product)"
-  export HOME="$(mktemp -d "${TMPDIR:-/tmp}/host-home.XXXXXX")"
+  setup_case COMPLETE
   cat >"$product/.agent-workflows/progress.md" <<'EOF'
 # Agent workflows — progress log
 
@@ -506,10 +443,6 @@ echo "== stop rules =="
 ## Entries
 
 EOF
-  log="$(mktemp)"
-  export FAKE_SPAWN_LOG="$log"
-  export FAKE_SPAWN_PROGRESS="$product/.agent-workflows/progress.md"
-  export FAKE_SPAWN_OUTCOME="COMPLETE"
   set +e
   out="$(run_host "$product" -n 2 --spawn "$FAKE" 2>&1)"
   ec=$?
@@ -519,8 +452,7 @@ EOF
   assert_eq "template multi-choice does not short-circuit" "1" "$spawns"
   assert_eq "template case exit 0" "0" "$ec"
   assert_contains "template case overall COMPLETE" "COMPLETE" "$out"
-  rm -rf "$product" "$HOME"
-  unset FAKE_SPAWN_LOG FAKE_SPAWN_PROGRESS FAKE_SPAWN_OUTCOME
+  teardown_case
 }
 
 # --- summary ---
