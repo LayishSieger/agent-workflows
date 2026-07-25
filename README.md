@@ -1,93 +1,67 @@
 # agent-workflows
 
-**Status: v0.3** — policy-driven shared tick, dual schedulers (chat + shell), three packages. GitHub is the only **proven** tracker instance.
+Give a coding agent a repeatable way to take a ready issue all the way to a pull request you can review.
 
-Shared workflows and skills for coding agents (Cursor, Claude Code, Grok Build, Codex, …).  
-Install the skill pack; agents use what ships **inside each skill** (no extra hub checkout required at runtime).
+| Skill | What it does |
+|-------|--------------|
+| `init-workflows` | Sets a repository up: policy + runtime |
+| `loop-workflows` | Runs one issue in chat |
+| `host-workflows` | Runs several from your terminal, unattended |
 
-Design freeze: [docs/v0.3.md](./docs/v0.3.md).
+## Quickstart
 
-## Mental model
+**1. Install**
 
-```text
-v0.1  /init-workflows     → contracts (docs/agents + .agent-workflows)
-v0.2  /loop-workflows     → GitHub-only once | max N in one session
-v0.3  policy ops + tick   → shared tick; chat workers for multi-N; thin shell host
-later host runner fleet   → park, multi-spawn, rate-limit, stack engines
+```bash
+npx skills add LayishSieger/agent-workflows
 ```
 
-| Layer | Role |
-|-------|------|
-| **0 — Contracts** | `init-workflows` ensures policy + runtime; seeds encode the tracker **ops contract** |
-| **1 — Planning** | Optional upstream (e.g. Matt wayfinder / to-spec / to-tickets). **Not** bundled here |
-| **2 — Autonomy** | Worker tick in `loop-workflows`; schedulers only count **N** and stop |
-
-| Layer | Role |
-|-------|------|
-| This repo | Publishes skill packages (source) |
-| Install target (e.g. `~/.agents/skills`) | Full skill directories after install |
-| Each product repo | Policy under `docs/agents/` + runtime under `.agent-workflows/` |
-
-## Three packages
-
-| Unit | Role |
-|------|------|
-| **`init-workflows`** | Contracts first (READY). Optional **S** chat / **H** shell AFK with skill scope **global** (default) or **product**; smart product spawn |
-| **`loop-workflows`** | Sole home of the **shared tick** and the **chat** entry (`once` / `max N`) |
-| **`host-workflows`** | Thin sequential **shell** host (`SKILL.md` + `scripts/host.sh`). Install never executes scripts |
-
-All three live under `skills/` and are discoverable by `npx skills add`.
-
-### Dual schedulers, one tick
-
-Both entry paths run the **same** worker-owned tick:
+**2. Set up the repository — once**
 
 ```text
-resume | pick → claim → implement → publish → progress
+/init-workflows
 ```
 
-| Entry | Role |
-|-------|------|
-| **Chat** `/loop-workflows` | **once** = one tick in this session; **max N** = parent schedules N **fresh one-tick workers** (subagents) |
-| **Shell** `host-workflows` / `scripts/host.sh` | Sequential 1..N: spawn one-shot agent → read progress `outcome:` → stop rules |
+Writes the **contracts** your agents rely on: policy they read (tracker, labels, domain) and runtime they write to. Once those are in place, the repo is **READY**.
 
-Schedulers only own outer N and stop rules. Workers discover policy under product `docs/agents/*` and pick/resume themselves.
+**3. Run the work**
 
-### Breaking change (0.2 → 0.3)
+```text
+/loop-workflows                                            # one issue, in chat
+bash ~/.agents/skills/host-workflows/scripts/host.sh -n 3  # several, unattended
+```
 
-| Mode | 0.2 | 0.3 |
-|------|-----|-----|
-| **once** | One tick in-session | Same shape |
-| **max N** | Up to N implements **in one session context** | Parent **only schedules**; each tick is a **fresh one-tick worker** |
+Either way it's the same **tick**: take a ready issue so other agents skip it (**claim**), implement it, open the PR and hand it back to a human (**publish**). The shell path runs one fresh agent per issue and needs a spawn command telling the host how to start your agent; `/init-workflows` offers to write one.
 
-Hard break — no compatibility flag. Pin a **0.2** install if same-session multi-N is required.
+## How it works
 
-## What each skill does
+One **tick** is always the same pass: resume or pick → claim → implement → publish → progress. **Contracts** (under `docs/agents/`) tell the agent how to talk to your tracker; **READY** means those contracts and the `.agent-workflows/` runtime are in place. Chat (`/loop-workflows`) and shell (`host-workflows`) are two doors over that same tick — chat runs it in your session; the shell host schedules unattended workers, one fresh agent per issue.
 
-### `/init-workflows`
+## Why this exists
+
+Agents that “keep going” tend to stuff many issues into one context, skip human review, or drain a queue with no bound. This pack refuses that: no unbounded drain without an explicit **N**, one fresh agent per issue on the multi-N path, and a pull request handoff you review (**publish**) instead of a silent merge. Planning (turning ideas into ready tickets) stays optional and separate — this hub owns setup and the implement loop.
+
+## The three skills
+
+### `init-workflows`
 
 1. **Audits** a fixed checklist (concrete paths — not an “initialized” stamp)
 2. **Repairs** contracts + runtime (defaults write without a second confirm; never wipe `progress.md`; never overwrite non-empty policy without confirm)
-3. **Optional autonomy:** **S** chat only, or **H** shell AFK — pick skill scope **G** global (default, solo) or **P** product (team pin); install host+loop via CLI in that scope; keep/install/reinstall; no silent install
+3. **Optional autonomy:** chat only, or shell AFK — with skill scope global (default) or product; install host+loop via CLI; no silent install
 4. **Smart spawn** (shell only): detect agent CLIs on PATH; write product `.agent-workflows/spawn` (always product-local)
-5. Status + short “what next” (one canonical `host.sh` path for the chosen scope)
 
 It does **not** implement issues, drain queues, or run `host.sh`. READY is contracts-only; loop/host/spawn are optional.
 
-**Product vs global skills:** policy + spawn + progress always live in the product. Skill packages may be global (`npx skills add -g …`, run `~/.agents/skills/host-workflows/scripts/host.sh`) or product (`npx skills add …` without `-g`, run `.agents/skills/host-workflows/scripts/host.sh`). Prefer one scope per product; dual installs should be resolved in init.
+**Product vs global skills:** policy + spawn + progress always live in the product. Skill packages may be global (`npx skills add -g …`, run `~/.agents/skills/host-workflows/scripts/host.sh`) or product (`npx skills add …` without `-g`, run `.agents/skills/host-workflows/scripts/host.sh`). Prefer one scope per product.
 
-### `/loop-workflows` (chat)
-
-1. Preflight via product ops (`preflight`, `integration-base`, …). On failure in an interactive **once** run: pause and ask **retry** / **abort** (no progress until abort or retries exhausted). Unattended host workers HARD_STOP immediately.
-2. Resume at most one incomplete claim, else pick oldest claimable ready work
-3. Soft-skip open publish artifacts, open blockers, and skill-side **spec/PRD** bodies
-4. Implement one ticket (typecheck, focused tests, broader pass when the product has them); create publish artifact; `ready-for-human`
-5. Append `.agent-workflows/progress.md` with required **`outcome:`**; stop on COMPLETE / BLOCKED / MAX / HARD_STOP / FAILED
+### `loop-workflows` (chat)
 
 | Mode | Invocation |
 |------|------------|
-| **once** (default) | `/loop-workflows` |
-| **max N** | User states N explicitly (e.g. “max 3”) — **no unbounded drain** |
+| **once** (default) | `/loop-workflows` — one tick in this session |
+| **max N** | User states N explicitly (e.g. “max 3”) — parent schedules N **fresh one-tick workers**; **no unbounded drain** |
+
+On interactive preflight failure: pause and ask **retry** / **abort**. Unattended host workers stop immediately. Soft-skips cover open publish artifacts, open blockers, and skill-side **spec/PRD** bodies. Each tick appends `.agent-workflows/progress.md` with a required **`outcome:`**.
 
 Empty queue → COMPLETE and a short hint to create tickets (planning skills install separately).
 
@@ -115,7 +89,7 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 
 All missing → **HARD STOP** (no silent default binary). Host injects the tick prompt into the spawn recipe: if the line contains `{{PROMPT}}`, replace it (quoted); else append as the final argument. Never adds `--continue` / `--resume`.
 
-Spawn is **human-owned config** (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners (adjust for your agent version):
+Spawn is **human-owned** config (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners (adjust for your agent version):
 
 ```bash
 # product or machine file — one line only
@@ -129,17 +103,16 @@ grok -p {{PROMPT}} --always-approve --output-format plain
 
 Workers must have **`loop-workflows`** installed for the agent binary you spawn. Control plane is progress **`outcome:`** only — process exit ≠ tick success.
 
-## Product runtime (`.agent-workflows/`)
+## What lands in your repo
 
 | Path | Purpose |
 |------|---------|
-| `progress.md` | Session log; hosts key off latest **`outcome:`** |
-| `logs/` | Optional per-run notes |
-| `spawn` | Optional one-line shell command string |
+| `docs/agents/` | Policy (tracker ops, triage labels, domain) — reviewable in git |
+| `.agent-workflows/progress.md` | Session log; hosts key off latest **`outcome:`** |
+| `.agent-workflows/logs/` | Optional per-run notes |
+| `.agent-workflows/spawn` | Optional one-line shell command string |
 
 **No** full `.agent-workflows/config` in 0.3. Integration branch (if not the repo default) lives in **`docs/agents/issue-tracker.md`**.
-
-Policy for issues/labels/domain lives in **`docs/agents/`** (reviewable in git), not under `.agent-workflows/`.
 
 ### Progress `outcome:` (control plane)
 
@@ -151,19 +124,9 @@ Policy for issues/labels/domain lives in **`docs/agents/`** (reviewable in git),
 - **note:** ≤1 line
 ```
 
-## Install
-
-```bash
-npx skills add LayishSieger/agent-workflows
-# or from a local clone:
-npx skills add /path/to/agent-workflows
-```
-
-That should place `init-workflows`, `loop-workflows`, and `host-workflows` under your skills directory (exact CLI may vary). You can install selectively if your skills CLI supports it.
-
 ### Optional planning companions
 
-Ticket/spec generation is **not** shipped here. Example separate install (when you choose Matt or another pack):
+Ticket/spec generation is **not** shipped here. Example separate install:
 
 ```bash
 npx skills add <owner/matt-or-other-skills-repo>
@@ -171,27 +134,7 @@ npx skills add <owner/matt-or-other-skills-repo>
 
 Then use that pack to produce issues that match `docs/agents` triage labels and are agent-ready (acceptance criteria, blockers).
 
-## Usage
-
-In a **product** repository:
-
-```text
-/init-workflows          # ensure contracts; optional host + spawn offer
-/loop-workflows          # one ready issue → publish (default once)
-/loop-workflows max 3    # up to three ticks via fresh workers (not one stuffed context)
-```
-
-Shell AFK (after spawn is configured):
-
-```bash
-bash ~/.agents/skills/host-workflows/scripts/host.sh -n 3
-```
-
-- **Existing repo** with `docs/agents/*`: init repairs runtime gaps without wiping progress; loop needs a usable tracker policy + clean tree for GitHub.
-- **Greenfield**: init interview (tracker → labels → domain), then create issues, then chat loop and/or shell host.
-- **Contracts only**: run init and decline the host/spawn offer; do not install loop if you only need policy docs.
-
-Dogfood: real product with GitHub issues, once + multi-N via workers (chat or shell). Suite under [`tests/dogfood/`](./tests/dogfood/) (throwaway GH repo + Grok host + fixture issues).
+Dogfood: real product with GitHub issues, once + multi-N via workers (chat or shell). Suite under [`tests/dogfood/`](./tests/dogfood/).
 
 ```bash
 bash tests/dogfood/run-automated.sh    # host unit tests + ops contract
@@ -199,31 +142,7 @@ bash tests/dogfood/setup-sandbox.sh    # private product + labels + issues
 # then follow tests/dogfood/run-dogfood.md in the product dir
 ```
 
-## Repository layout
-
-```text
-agent-workflows/
-  README.md
-  CHANGELOG.md
-  LICENSE
-  docs/
-    v0.1.md
-    v0.2.md
-    v0.3.md
-  skills/
-    init-workflows/       # contracts ensure skill + seeds
-    loop-workflows/       # shared tick + chat scheduler
-    host-workflows/       # thin shell host + scripts/host.sh
-  scripts/
-    check-ops-contract.sh # structural check for tracker ops seeds
-  tests/
-    host-workflows/       # fake-SPAWN shell tests
-    dogfood/              # E2E suite: sandbox + playbook + Tier 0 gate
-  fixtures/
-    dogfood-product/      # minimal Node product for dogfood issues
-```
-
-## Out of scope (still)
+## Out of scope
 
 - Sandcastle (or any sandbox orchestrator) adapter
 - Bundling Matt (or other) planning skills into this hub
@@ -237,3 +156,5 @@ agent-workflows/
 ## License
 
 MIT — see [LICENSE](./LICENSE).
+
+For maintainers and contributors: see the [changelog](./CHANGELOG.md) and [design history](./docs/v0.3.md).

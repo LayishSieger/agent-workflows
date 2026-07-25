@@ -13,7 +13,7 @@ Source of truth for `tests/dogfood/`. Execute via `run-automated.sh` (Tier 0) an
 
 | ID | Pass criteria |
 |----|---------------|
-| D1 | README: three packages, dual schedulers, multi-N break, chat vs shell, spawn precedence |
+| D1 | README: outcome→packages→quickstart, three skills, once/max N, chat vs shell, spawn precedence |
 | D2 | CHANGELOG 0.3: freeze, ops seeds, loop rewrite, host, init offer/S-H, security |
 | D3 | `docs/v0.3.md`: no Sandcastle / Matt-bundle / unbounded-drain claims as in-scope |
 | D4 | init: contracts-first READY; loop/host/spawn not required for READY |

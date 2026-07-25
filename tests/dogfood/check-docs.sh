@@ -19,10 +19,10 @@ check() {
 
 echo "== Tier 1 static needles =="
 
-check D1a "README names three packages" README.md "Three packages|three packages"
-check D1b "README describes dual schedulers / once|max N" README.md "Dual schedulers|dual schedulers|once.*max N|fresh one-tick"
+check D1a "README names three skills / packages" README.md "The three skills|init-workflows|loop-workflows|host-workflows"
+check D1b "README describes once / max N fresh workers" README.md "once.*max N|fresh one-tick|max N"
 check D1c "README mentions host-workflows / host.sh" README.md "host-workflows|host\\.sh"
-check D1d "README documents 0.2→0.3 breaking change" README.md "Breaking change|hard break|0\\.2 → 0\\.3"
+check D1d "README first screen is outcome → quickstart (no genealogy banner)" README.md "Give a coding agent a repeatable way|## Quickstart"
 check D1e "README covers spawn resolution" README.md "spawn|--spawn|AGENT_SPAWN"
 
 check D2a "CHANGELOG has 0.3 entries" CHANGELOG.md "0\\.3"
