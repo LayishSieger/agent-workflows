@@ -1,50 +1,24 @@
 ---
 name: init-workflows
-description: Ensure a product repo has agent-workflows contracts (policy docs + runtime). Optional CLI install of loop/host (global or product scope) and smart spawn. Re-entrant audit and repair.
+description: Get a product repo ready for agent-workflows — audit what's missing, repair it, then optionally install the chat and shell runners.
 disable-model-invocation: true
 ---
 
-# Ensure workflows-ready
+# Get a product repo ready
 
-**Ensure** this product repo meets agent-workflows contracts. Audit → repair gaps → optional AFK stack. Do not trust marker files or prior "initialized" claims.
+Get this product repo to **READY**: the **contracts** are its policy under `docs/agents/` and runtime under `.agent-workflows/`. Audit first, repair gaps, then offer the optional chat and shell runners.
 
-This is a prompt-driven skill, not a deterministic script. Short explainers; batch questions; write only per rules below.
+This is a prompt-driven skill, not a deterministic script. Explore silently, keep explanations short, batch questions, and write only per the rules below. Do not trust marker files or prior “initialized” claims.
 
-**Contracts first** → overall READY. Autonomy skills/spawn are optional and never required for READY.
+**Contracts first** → overall READY. Runner skills and spawn are optional and never required for READY.
 
 **Out of scope:** implementing features, draining queues, running `host.sh`, multi-spawn fleets, secrets, full `.agent-workflows/config`, hub-clone as default install path.
 
 Seeds ship **in this skill directory**.
 
-## Mental model (for you and the final status)
-
-```text
-init-workflows → docs/agents/* + .agent-workflows/  (READY)   ← always PRODUCT
-       │
-  [S] chat only              [H] shell AFK
-       │                            │
-  loop-workflows             host + loop  (scope: global OR product)
-  /loop-workflows            host.sh -n N + product spawn
-       │                            │
-       └──────── loop tick (claim → implement → publish → progress) ──┘
-```
-
-### What lives where
-
-| Location | Contents |
-|----------|----------|
-| **Product repo** | Always: `docs/agents/*`, `.agent-workflows/` (`progress.md`, `logs/`, **spawn**). Optional: project skills under `.agents/skills/` + `skills-lock.json` if user chose **product** scope |
-| **User machine (global)** | Optional: `~/.agents/skills/{init,loop,host}-workflows` (and agent mirrors e.g. `~/.claude/skills/`) when user chose **global** scope |
-
-**Spawn is always product-local** (`.agent-workflows/spawn`). Host package may be global or product; print **one** primary `host.sh` path that matches the chosen scope.
-
-`npx skills add` **defaults to project** when cwd is a git repo. For **global** scope always pass **`-g`**. For **product** scope omit `-g` (and run from product root).
-
-Optional planning (separate install, e.g. Matt Pocock engineering skills): to-spec / to-tickets / triage → `ready-for-agent`. This stack **consumes** that queue; neither installs the other.
-
 ## Process
 
-### 1. Explore
+### 1. Explore silently
 
 Product root (`git rev-parse --show-toplevel` or workspace root). If cwd is only this skill package, ask which product to ensure.
 
@@ -53,43 +27,32 @@ Read:
 - `git remote -v`
 - `docs/agents/issue-tracker.md`, `triage-labels.md`, `domain.md`
 - `.agent-workflows/progress.md`, `logs/`, `spawn` (product) — for **progress.md** use shell `test -f` / `ls` (file is gitignored; do not trust git-only or sandbox file trees that hide ignored paths)
-- Machine spawn `~/.config/agent-workflows/spawn` if readable (info only; default write is product)
 - `.gitignore`, `AGENTS.md` / `CLAUDE.md`, `.scratch/`, `CONTEXT.md` / monorepo signals
-- **Skills (both scopes):**
-  - **Global:** `~/.agents/skills/`, `~/.claude/skills/` (and similar) for `loop-workflows`, `host-workflows`
-  - **Product:** `<product>/.agents/skills/` + `skills-lock.json` if present
-  - If **both** global and product copies exist: note both paths (dual install — pick one scope later)
-- **Agent CLIs on PATH** (`command -v` only; do **not** treat bare `agent` as a hit):
 
-| Binary | Preset shape (product spawn — no trust/unattended flags here) |
-|--------|--------------------------------------------------------------|
-| `grok` | `grok -p {{PROMPT}} --output-format plain` |
-| `cursor-agent` | `cursor-agent -p --output-format text` |
-| `claude` | `claude -p {{PROMPT}} --output-format text` |
-| `codex` | `codex exec --ephemeral` |
-
-`{{PROMPT}}` = host substitutes the tick prompt (required for CLIs where `-p` takes the prompt as a value, e.g. Grok). Without it, host appends the prompt as the final argument.
-
-**AFK note:** shell host needs unattended/trust flags so the worker can run tracker CLIs (`gh`) and write files. Those flags are **human-owned** — copy from hub README spawn examples into the spawn line (or paste a full custom line). Do not invent trust flags from this skill.
+Do not narrate this checklist. Mention a finding only when it changes a policy choice or blocks READY. Do not inspect runner installs, agent CLIs, or machine spawn yet; those belong to the optional shell path after READY.
 
 ### 2. Audit and present
 
-Print table **before** writes:
+The first user-facing turn is one purpose sentence followed by the audit table. Print it **before** writes:
 
-| # | Artifact | Ready when |
-|---|----------|------------|
-| 1 | `docs/agents/issue-tracker.md` | non-empty |
-| 2 | `docs/agents/triage-labels.md` | non-empty |
-| 3 | `docs/agents/domain.md` | non-empty |
-| 4 | `.agent-workflows/progress.md` | exists |
-| 5 | `.agent-workflows/logs/` | exists (prefer `.gitkeep`) |
-| 6 | `.gitignore` | has runtime lines (step 5; scope may add skill lines later) |
+> Init gets this product repo to **READY**: its **contracts** are policy under `docs/agents/` plus runtime under `.agent-workflows/`.
 
-Also note (informational): loop/host **global** and **product** paths, agent CLIs, product spawn.
+| # | Artifact | Status |
+|---|----------|--------|
+| 1 | `docs/agents/issue-tracker.md` | present / missing |
+| 2 | `docs/agents/triage-labels.md` | present / missing |
+| 3 | `docs/agents/domain.md` | present / missing |
+| 4 | `.agent-workflows/progress.md` | present / missing |
+| 5 | `.agent-workflows/logs/` | present / missing |
+| 6 | `.gitignore` runtime lines | present / missing |
+
+If policy is missing, end with one short sentence that a single batch of choices comes next, followed by runtime repair. If policy is present, say the runtime gaps will be repaired next.
 
 AGENTS.md / CLAUDE.md not required for READY.
 
-**Done when:** full table shown.
+Do not show an ASCII mental model, location table, install command, CLI preset, spawn detail, or autonomy menu in this turn.
+
+**Done when:** purpose + full table shown, with no runner setup mixed in.
 
 ---
 
@@ -144,7 +107,7 @@ No confirm unless surprising:
 !.agent-workflows/logs/.gitkeep
 ```
 
-Do **not** write skill-scope gitignore lines here — step 7 adjusts after the user picks global vs product. Do **not** write `spawn` here (step 7 only).
+Do **not** write skill-scope gitignore lines here — step 8 adjusts after the user picks global vs product. Do **not** write `spawn` here (step 8 only).
 
 ### 6. Optional project pointer
 
@@ -160,41 +123,62 @@ Runtime-only when policy already documented elsewhere:
 
 ---
 
-### 7. Optional autonomy (not required for READY)
+### 7. Re-audit contracts and declare READY
 
-Detect and print:
+Re-check the six audit rows **on disk**. Print the contract-only status:
 
-- loop/host **global** paths (if any)
-- loop/host **product** paths (if any)
-- agent CLIs
-- product spawn present/missing
+```text
+agent-workflows status
+- issue-tracker: present|missing|drift
+- triage-labels: present|missing|drift
+- domain: present|missing|drift
+- progress.md: present|missing|drift
+- logs/: present|missing|drift
+- gitignore: present|missing|drift
+- overall: READY | NOT READY
+```
 
-Short blurb:
+If NOT READY, list remaining gaps only and stop. Do not offer runner setup.
 
-> **Chat path:** `/loop-workflows` needs the **loop-workflows** skill (usually global).  
-> **Shell AFK:** `host.sh` + **loop** + product spawn. Skills may be **global** (this machine) or **product** (this repo). Install never runs the host.
+If READY, finish this turn. Offer the optional runner choice in a separate turn; do not mix it into the repair report.
 
-**Ask (one choice):**
+### 8. Optional runners (not required for READY)
+
+After READY, ask one choice:
+
+> **READY** — the contracts are in place. Optionally set up how work runs:
 
 | Reply | Meaning |
 |-------|---------|
-| **S** / **skip** / **chat** | Contracts only. No host install. |
-| **H** / **shell** | Shell AFK: choose skill scope, ensure host + loop, then spawn. |
+| **S** / **skip** / **chat** | Chat only: use `/loop-workflows` when you want. No shell host install. |
+| **H** / **shell** | Shell AFK: unattended terminal runs; next choose skill scope, then install/spawn. |
 
-#### 7a. If **S** (chat only)
+Recommend **S** for a first-time or solo setup unless the user wants unattended multi-issue runs now. Do not show G/P, install commands, CLI presets, trust flags, `{{PROMPT}}`, or dual-install details before the user chooses H.
+
+#### 8a. If **S** (chat only)
 
 - Do **not** install host.
+- Check for `loop-workflows` in global and product skill paths.
 - If loop missing **everywhere**, print (do not force):
 
 ```bash
 npx skills add -g -y -s loop-workflows LayishSieger/agent-workflows
 ```
 
-- Skip spawn. Go to step 8.
+- Skip spawn. Go to step 9.
 
-#### 7b. If **H** (shell AFK) — skill scope then CLI
+#### 8b. If **H** (shell AFK) — skill scope then CLI
 
-##### 7b.1 Scope (required)
+Only now inspect:
+
+- loop/host **global** paths: `~/.agents/skills/`, `~/.claude/skills/` (and similar)
+- loop/host **product** paths: `<product>/.agents/skills/` and `skills-lock.json`
+- product spawn and, if readable, machine `~/.config/agent-workflows/spawn`
+- agent CLIs on PATH (`grok`, `cursor-agent`, `claude`, `codex`; never treat bare `agent` as a hit)
+
+If both global and product copies exist, note both paths here and resolve the canonical scope below.
+
+##### 8b.1 Scope (required)
 
 > Where should **host** + **loop** skills live?
 
@@ -207,7 +191,11 @@ Lead with **G** unless product already has intentional project skills and no glo
 
 If **both** global and product copies already exist: warn dual install; ask which is **canonical** for this product (G or P). Status/Next must print **only that** `host.sh` path.
 
-##### 7b.2 Install commands (same scope for host **and** loop)
+Policy and runtime always stay in the product repo. Spawn is always product-local at `.agent-workflows/spawn`. Host and loop skills may be global or product-scoped.
+
+`npx skills add` defaults to product scope in a git repo. Always pass `-g` for global scope; omit it for product scope.
+
+##### 8b.2 Install commands (same scope for host **and** loop)
 
 **Global (G):**
 
@@ -237,7 +225,7 @@ bash .agents/skills/host-workflows/scripts/host.sh -n N
 
 Install **both** skills in the **same** scope (worker must load loop from a place the spawned agent sees; product scope pins both for the repo).
 
-##### 7b.3 Per-skill actions (within chosen scope)
+##### 8b.3 Per-skill actions (within chosen scope)
 
 Judge presence only in the **chosen** scope (global roots vs product `.agents/skills/`).
 
@@ -248,7 +236,7 @@ Judge presence only in the **chosen** scope (global roots vs product `.agents/sk
 
 On **install** / **reinstall**: run the matching commands for that scope. On **I'll install**: print only.
 
-##### 7b.4 Gitignore for skill scope
+##### 8b.4 Gitignore for skill scope
 
 After scope is known, ensure `.gitignore` matches (append only; do not remove user lines without ask):
 
@@ -266,14 +254,25 @@ skills-lock.json
 
 **Never** run `host.sh` from this skill.
 
-#### 7c. Spawn (only if **H**)
+#### 8c. Spawn (only if **H**)
 
 > Spawn = one-line command that starts your coding agent once. Host injects the tick prompt (`{{PROMPT}}` or final arg).  
 > **Saved to:** product `.agent-workflows/spawn` (one line) — always product, any skill scope.
 
-If product spawn **exists** and non-empty: show contents → **keep** \| **replace**. On keep → step 8. On replace → detection flow below.
+If product spawn **exists** and non-empty: show contents → **keep** \| **replace**. On keep → step 9. On replace → detection flow below.
 
-**Detect** CLIs from step 1 (`grok`, `cursor-agent`, `claude`, `codex` only).
+Shape presets for the detected CLIs:
+
+| Binary | Preset shape (no trust/unattended flags included) |
+|--------|---------------------------------------------------|
+| `grok` | `grok -p {{PROMPT}} --output-format plain` |
+| `cursor-agent` | `cursor-agent -p --output-format text` |
+| `claude` | `claude -p {{PROMPT}} --output-format text` |
+| `codex` | `codex exec --ephemeral` |
+
+`{{PROMPT}}` means host substitutes the tick prompt. Without it, host appends the prompt as the final argument.
+
+Shell host needs unattended/trust flags so the worker can run tracker CLIs and write files. Those flags are **human-owned**: copy a full recipe from the hub README or paste a custom line. Do not invent trust flags.
 
 | Detected | UX |
 |----------|-----|
@@ -291,9 +290,9 @@ Optional one-liner only if user asks: also write machine `~/.config/agent-workfl
 
 ---
 
-### 8. Re-audit, status, what next
+### 9. Final status and Next
 
-Re-check checklist rows **on disk**. Print:
+Keep the READY result from step 7 and add only the runner fields resolved in step 8:
 
 ```text
 agent-workflows status
@@ -313,23 +312,20 @@ agent-workflows status
 
 `skill-scope`, skills, and `spawn` are **informational** — they do **not** flip overall to NOT READY when skipped.
 
-Then **How it works next** (always when READY, short):
+Then print a short **Next**:
 
 ```text
 Next
-1. Contracts (this repo): docs/agents/* .
-2. Chat: /loop-workflows  (loop skill on the agent)
-3. Shell: <host-entry from status>
-   → reads product .agent-workflows/spawn + progress
-   → worker runs one loop tick; host stops on progress outcome:
-     COMPLETE | BLOCKED | MAX | HARD_STOP | FAILED | …
-4. Scope: global skills on the machine, or product .agents/ for team pin;
-   spawn/progress/policy always product-local.
-5. Planning (optional, separate): e.g. Matt to-spec/to-tickets → ready-for-agent.
+1. Contracts: docs/agents/* (done).
+2. Chat: /loop-workflows <or install hint if loop is missing>.
+3. Shell AFK: <host-entry, or skipped>.
+4. Planning (optional, separate): to-spec/to-tickets → ready-for-agent.
 ```
 
-If NOT READY: list remaining gaps only.
+Here a **tick** is one issue pass: **claim** leaves the ready queue, then implementation, **publish** hands a pull request to a human, and progress records the result. Gloss these terms once only when useful; omit the sentence if they were already explained.
+
+Do not add version genealogy, migration notes, the full `outcome:` enum, spawn resolution, or scope architecture to Next.
 
 Re-run anytime to re-ensure (repairs gaps; **never** wipes progress).
 
-**Done when:** status + next steps printed after on-disk re-audit.
+**Done when:** final status + short Next printed.
