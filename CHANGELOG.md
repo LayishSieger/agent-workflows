@@ -1,5 +1,7 @@
 # Changelog
 
+Records project changes for maintainers and upgraders. To install and use agent-workflows, start with the [README](./README.md).
+
 ## 0.3.0 — unreleased
 
 ### Added
