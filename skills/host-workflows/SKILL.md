@@ -1,24 +1,26 @@
 ---
 name: host-workflows
-description: Thin sequential shell host for AFK multi-tick (spawn one-shot workers; stop on progress outcomes).
+description: From the terminal, run up to N ready issues one after another, unattended.
 disable-model-invocation: true
 ---
 
 # Host workflows
 
-**Shell scheduler** for AFK multi-issue work **without** a chat parent. Spawns sequential one-shot agent sessions; each worker runs **exactly one** shared tick via **`loop-workflows`**.
+Run up to **N** ready issues from your **terminal**, unattended — one fresh agent session per issue.
 
-**Not:** the tick recipe (lives only in `loop-workflows`), a multi-spawn fleet, Sandcastle, or a default agent binary.
+Each session runs **exactly one tick** of `loop-workflows` (same claim → implement → publish pass as chat). This skill is only the shell scheduler.
 
-**Install never runs the host.** `npx skills add` only copies/symlinks this package. You must **explicitly** invoke the script when you want AFK.
+**Not** the tick recipe (that lives in `loop-workflows`). Does not merge PRs, implement tickets in-process, or default to an agent binary.
+
+**Install never runs the host** — `npx skills add` only copies/symlinks this package; you invoke the script when you want AFK.
 
 ## Prerequisites
 
 | Need | Why |
 |------|-----|
-| **`loop-workflows` installed** for the agent binary you spawn | Workers are instructed to run one tick of that skill |
-| Product contracts (`docs/agents/*`, `.agent-workflows/`) | Usually via `init-workflows` |
-| Spawn command configured | Flag, env, product file, or machine file — see below |
+| `loop-workflows` installed for the agent you spawn | Workers run one tick of that skill |
+| Product contracts (`docs/agents/*`, `.agent-workflows/`) | Usually via `/init-workflows` |
+| A **spawn** command | How the host starts your agent — see **Spawn resolution** below |
 
 ## Primary entry
 
@@ -35,9 +37,11 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 | Flag | Meaning |
 |------|---------|
 | `-n N` | Max ticks (default **1**). No unbounded drain. |
-| `--spawn CMD` | Override spawn command string |
-| `--cwd DIR` | Product root (default: current directory) |
+| `--spawn CMD` | Override spawn command |
+| `--cwd DIR` | Product root (default: cwd) |
 | `-h` / `--help` | Usage |
+
+If spawn is missing, the host **HARD STOP**s — there is no default agent binary.
 
 Optional chat use of this skill: print the script path and how to invoke it — **do not** reimplement the loop in prose.
 
