@@ -147,3 +147,65 @@ They disagree on **structure** — which is the actual question.
 3. **Vocabulary budget** — A and C spend the whole `tick`/`claim`/`publish` gloss on screen one. Is that the right spend, or should `claim`/`publish` wait?
 4. **Three packages** — no variant names `init-workflows` / `loop-workflows` / `host-workflows` as a set above the fold; they appear as commands. Does the package framing need to survive up top?
 5. **What replaces the demoted material** — one "How it works" section below the fold, or a separate Internals/maintainers page?
+
+---
+
+# Converged (grilled 2026-07-25)
+
+Outcome line, then the **ladder** (C) — not the fork table, not the transcript. Package **table** above the fold; the two run paths **merged into one step** so chat and shell sit side by side; **all five** first-touch terms glossed above the fold; **no maintainer material anywhere in the README**. Shape reference: [mattpocock/skills README](https://github.com/mattpocock/skills/blob/main/README.md) — quickstart, why it exists, reference, no internals.
+
+## First screen
+
+> # agent-workflows
+>
+> Give a coding agent a repeatable way to take a ready issue all the way to a pull request you can review.
+>
+> | Skill | What it does |
+> |-------|--------------|
+> | `init-workflows` | Sets a repository up: policy + runtime |
+> | `loop-workflows` | Runs one issue in chat |
+> | `host-workflows` | Runs several from your terminal, unattended |
+>
+> ## Quickstart
+>
+> **1. Install**
+>
+> ```bash
+> npx skills add LayishSieger/agent-workflows
+> ```
+>
+> **2. Set up the repository — once**
+>
+> ```text
+> /init-workflows
+> ```
+>
+> Writes the **contracts** your agents rely on: policy they read (tracker, labels, domain) and runtime they write to. Once those are in place, the repo is **READY**.
+>
+> **3. Run the work**
+>
+> ```text
+> /loop-workflows                                            # one issue, in chat
+> bash ~/.agents/skills/host-workflows/scripts/host.sh -n 3  # several, unattended
+> ```
+>
+> Either way it's the same **tick**: take a ready issue so other agents skip it (**claim**), implement it, open the PR and hand it back to a human (**publish**). The shell path runs one fresh agent per issue and needs a spawn command telling the host how to start your agent; `/init-workflows` offers to write one.
+
+## Section order
+
+```text
+<first screen above>
+## How it works        the tick in one paragraph; contracts and READY; chat and shell over the same tick
+## Why this exists     short — a few paragraphs, named problem → named fix (no unbounded drain,
+                       one fresh agent per issue, human review gate). Not several screens.
+## The three skills    init (audit, writes, AFK offer) · loop (once vs max N, outcome:) · host (-n N, spawn, {{PROMPT}})
+## What lands in your repo   docs/agents/ policy · .agent-workflows/ runtime
+## Out of scope · License
+```
+
+## Ruled out
+
+- **Variant A / B structures** — fork table reads as a choice before you know what either does; transcript is a promise that has to match real output.
+- **Light gloss** — `claim` / `publish` / `READY` deferred below the fold.
+- **Four-rung ladder** — separate "run several" step; merged instead, so the same-tick claim is made by adjacency.
+- **Internals or maintainers section** — genealogy, design freeze, 0.2→0.3 break and the ops contract stay in `docs/v0.3.md` and `CHANGELOG.md`; the README does not carry them and does not sign-post a maintainer path.
