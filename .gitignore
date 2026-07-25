@@ -8,3 +8,8 @@ skills-lock.json
 
 # dogfood last-run evidence (local)
 tests/dogfood/last-run/
+
+# agent-workflows runtime (local session state)
+.agent-workflows/progress.md
+.agent-workflows/logs/*
+!.agent-workflows/logs/.gitkeep
