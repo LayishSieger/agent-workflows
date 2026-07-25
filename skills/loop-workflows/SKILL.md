@@ -1,35 +1,41 @@
 ---
 name: loop-workflows
-description: Shared tick + chat scheduler (once in-session; max N via fresh one-tick workers). Policy ops only.
+description: Run one ready issue through to a pull request you can review — in this chat.
 disable-model-invocation: true
 ---
 
 # Loop workflows
 
-**Sole home of the shared tick** and the **chat** entry for agent-workflows v0.3. Schedulers only count N and stop; the **worker** owns resume | pick → claim → implement → publish → progress.
+Run **one ready issue** through to a pull request you can review — in this chat.
 
-Call **op names** and triage **role names** only. Concrete tracker CLIs live in product policy (`docs/agents/issue-tracker.md` Steps). Role strings map via `docs/agents/triage-labels.md`. Do **not** invent tracker recipes in this skill.
+That pass is a **tick**: **claim** the issue so other agents skip it, implement it, then **publish** (open the PR and hand it back to a human). The shell path runs the same tick via `host-workflows`.
 
-**Not** a shell host (see `host-workflows`). Does not merge publish artifacts, close issues as done, create tickets, or re-queue work.
+Call **op names** and triage **role names** only. Tracker CLIs live in product policy (`docs/agents/issue-tracker.md`). Role strings map via `docs/agents/triage-labels.md`. Do **not** invent tracker recipes here.
 
-Design freeze: hub `docs/v0.3.md`.
+**Not** a shell host. Does not merge PRs, close issues as done, create tickets, or re-queue work.
 
 ## Modes
 
-| Mode | Invocation | Behavior |
-|------|------------|----------|
-| **once** (default) | `/loop-workflows` | Run **exactly one** shared tick **in this session** end-to-end |
-| **max N** | User states positive **N** (e.g. `max 3`) | Parent **only schedules**; each tick is a **fresh one-tick worker** (subagent / clean session) |
+| Mode | How | Behavior |
+|------|-----|----------|
+| **once** (default) | `/loop-workflows` | Exactly one tick **in this session** |
+| **max N** | e.g. `max 3` | Parent **only schedules**; each tick is a **fresh** one-tick worker |
 
-“Drain until empty” without N → ask for N or use **once**.
+No unbounded drain — if you want “until empty,” give an **N** or use **once**.
 
-### Breaking change (0.2 → 0.3) — hard break
+`max N` always schedules **fresh** one-tick workers — the parent does not implement N tickets in one context. (0.2 same-session multi-N is gone; see **Breaking change** below.)
+
+After each tick, append progress with an **`outcome:`** (machine field the host and schedulers read). Full list under **Glossary**.
+
+## Breaking change (0.2 → 0.3) — hard break
 
 **0.2** ran up to N ticks **in the same session** (one context stuffed with multiple implements).
 
 **0.3 max N** is a **hard break**: the parent agent **does not implement N tickets in one context**. It schedules N independent workers; each worker runs the shared tick once and exits. No compatibility flag — pin a 0.2 install if same-session multi-N is required.
 
 **once** is unchanged in shape: one in-session tick.
+
+Design freeze: hub `docs/v0.3.md`.
 
 ## Glossary
 
