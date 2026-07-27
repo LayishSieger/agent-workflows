@@ -13,3 +13,4 @@ tests/dogfood/last-run/
 .agent-workflows/progress.md
 .agent-workflows/logs/*
 !.agent-workflows/logs/.gitkeep
+.agent-workflows/spawn

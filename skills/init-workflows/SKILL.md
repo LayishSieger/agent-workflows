@@ -1,6 +1,6 @@
 ---
 name: init-workflows
-description: Get a product repo ready for agent-workflows — audit what's missing, repair it, then optionally install the chat and shell runners.
+description: Get a product repo ready for agent-workflows — audit what's missing, repair it, then optionally configure existing chat and shell runners.
 disable-model-invocation: true
 ---
 
@@ -105,6 +105,7 @@ No confirm unless surprising:
 .agent-workflows/progress.md
 .agent-workflows/logs/*
 !.agent-workflows/logs/.gitkeep
+.agent-workflows/spawn
 ```
 
 Do **not** write skill-scope gitignore lines here — step 8 adjusts after the user picks global vs product. Do **not** write `spawn` here (step 8 only).
@@ -151,7 +152,7 @@ After READY, ask one choice:
 | Reply | Meaning |
 |-------|---------|
 | **S** / **skip** / **chat** | Chat only: use `/loop-workflows` when you want. No shell host install. |
-| **H** / **shell** | Shell AFK: unattended terminal runs; next choose skill scope, then install/spawn. |
+| **H** / **shell** | Shell AFK: unattended terminal runs; next choose skill scope, then verify runners and configure spawn. |
 
 Recommend **S** for a first-time or solo setup unless the user wants unattended multi-issue runs now. Do not show G/P, install commands, CLI presets, trust flags, `{{PROMPT}}`, or dual-install details before the user chooses H.
 
@@ -159,11 +160,7 @@ Recommend **S** for a first-time or solo setup unless the user wants unattended 
 
 - Do **not** install host.
 - Check for `loop-workflows` in global and product skill paths.
-- If loop missing **everywhere**, print (do not force):
-
-```bash
-npx skills add -g -y -s loop-workflows LayishSieger/agent-workflows
-```
+- If loop is missing **everywhere**, report it and ask the user to install it from a source and immutable revision they have reviewed. Do not run or propose an unpinned package-manager/GitHub install.
 
 - Skip spawn. Go to step 9.
 
@@ -173,7 +170,7 @@ Only now inspect:
 
 - loop/host **global** paths: `~/.agents/skills/`, `~/.claude/skills/` (and similar)
 - loop/host **product** paths: `<product>/.agents/skills/` and `skills-lock.json`
-- product spawn and, if readable, machine `~/.config/agent-workflows/spawn`
+- existence only (not contents) of product spawn and machine `~/.config/agent-workflows/spawn`
 - agent CLIs on PATH (`grok`, `cursor-agent`, `claude`, `codex`; never treat bare `agent` as a hit)
 
 If both global and product copies exist, note both paths here and resolve the canonical scope below.
@@ -193,37 +190,23 @@ If **both** global and product copies already exist: warn dual install; ask whic
 
 Policy and runtime always stay in the product repo. Spawn is always product-local at `.agent-workflows/spawn`. Host and loop skills may be global or product-scoped.
 
-`npx skills add` defaults to product scope in a git repo. Always pass `-g` for global scope; omit it for product scope.
+##### 8b.2 Required skills (same scope for host **and** loop)
 
-##### 8b.2 Install commands (same scope for host **and** loop)
+Do not download or install code from this skill. Inspect only the chosen scope. If either skill is missing, report the missing name and ask the user to install both from a source and immutable revision they have reviewed, then rerun init.
 
-**Global (G):**
-
-```bash
-npx skills add -g -y -s loop-workflows LayishSieger/agent-workflows
-npx skills add -g -y -s host-workflows LayishSieger/agent-workflows
-```
-
-Primary entry:
+When both are already present, the global primary entry is:
 
 ```bash
 bash ~/.agents/skills/host-workflows/scripts/host.sh -n N
 ```
 
-**Product (P)** — run from product root; omit `-g`:
-
-```bash
-npx skills add -y -s loop-workflows LayishSieger/agent-workflows
-npx skills add -y -s host-workflows LayishSieger/agent-workflows
-```
-
-Primary entry:
+The product-scoped primary entry is:
 
 ```bash
 bash .agents/skills/host-workflows/scripts/host.sh -n N
 ```
 
-Install **both** skills in the **same** scope (worker must load loop from a place the spawned agent sees; product scope pins both for the repo).
+Both skills must be present in the **same** scope (the worker must load loop from a place the spawned agent sees).
 
 ##### 8b.3 Per-skill actions (within chosen scope)
 
@@ -231,10 +214,8 @@ Judge presence only in the **chosen** scope (global roots vs product `.agents/sk
 
 | State | Action |
 |-------|--------|
-| **Missing** | **install** (run CLI) \| **I'll install** (print cmd) \| **skip** (warn incomplete) |
-| **Present** | Report path. **keep** \| **reinstall** \| **skip**. Never silent overwrite. |
-
-On **install** / **reinstall**: run the matching commands for that scope. On **I'll install**: print only.
+| **Missing** | Report missing; stop optional shell setup until the user installs a reviewed immutable revision |
+| **Present** | Report path; keep it. Never overwrite or reinstall from this skill. |
 
 ##### 8b.4 Gitignore for skill scope
 
@@ -256,12 +237,12 @@ skills-lock.json
 
 #### 8c. Spawn (only if **H**)
 
-> Spawn = one-line command that starts your coding agent once. Host injects the tick prompt (`{{PROMPT}}` or final arg).  
+> Spawn = one-line, shell-free argv recipe that starts your coding agent once. Host injects the tick prompt (`{{PROMPT}}` or final arg).
 > **Saved to:** product `.agent-workflows/spawn` (one line) — always product, any skill scope.
 
-If product spawn **exists** and non-empty: show contents → **keep** \| **replace**. On keep → step 9. On replace → detection flow below.
+If product spawn **exists** and non-empty: report only that it is configured — **never read it into chat or show its contents**. Ask **keep** \| **replace**. On keep → step 9. On replace → detection flow below.
 
-Shape presets for the detected CLIs:
+Shell-free argv shape presets for the detected CLIs:
 
 | Binary | Preset shape (no trust/unattended flags included) |
 |--------|---------------------------------------------------|
@@ -270,7 +251,7 @@ Shape presets for the detected CLIs:
 | `claude` | `claude -p {{PROMPT}} --output-format text` |
 | `codex` | `codex exec --ephemeral` |
 
-`{{PROMPT}}` means host substitutes the tick prompt. Without it, host appends the prompt as the final argument.
+`{{PROMPT}}` must be a standalone argument; host substitutes the tick prompt. Without it, host appends the prompt as the final argument. Recipes must not contain shell quoting, substitutions, redirects, pipes, command chaining, command interpreters/wrappers, or credentials. Credentials belong in the CLI's environment or credential store.
 
 Shell host needs unattended/trust flags so the worker can run tracker CLIs and write files. Those flags are **human-owned**: copy a full recipe from the hub README or paste a custom line. Do not invent trust flags.
 
@@ -280,13 +261,13 @@ Shell host needs unattended/trust flags so the worker can run tracker CLIs and w
 | **Two or more** | Numbered menu of **only** detected shape presets + **custom** + **skip** |
 | **Zero** | Ask **custom** paste or **skip** (no fake presets) |
 
-Prefer **edit**/custom when the user wants a working AFK line (README recipes). Write **exactly one line** to `.agent-workflows/spawn` on yes/preset/custom. Create `.agent-workflows/` if needed.
+Prefer **edit**/custom when the user wants a working AFK line (README recipes). Before writing custom input, reject shell syntax and likely secrets (tokens, passwords, inline environment assignments, or credential-bearing URLs) without echoing the rejected value. Write **exactly one shell-free argv line** to `.agent-workflows/spawn` on yes/preset/custom. Create `.agent-workflows/` if needed and ensure the file remains gitignored.
 
 Optional one-liner only if user asks: also write machine `~/.config/agent-workflows/spawn`. Do **not** open with product-vs-machine-vs-flag by default.
 
 **Skip** = no file; host HARD STOPs until user sets `--spawn` / `AGENT_SPAWN` / spawn file later.
 
-**Done when:** S or H handled; scope G/P chosen if H; installs keep/reinstall/skip resolved; spawn keep/write/skip resolved; gitignore matched to scope.
+**Done when:** S or H handled; scope G/P chosen if H; required skills present or reported missing; spawn keep/write/skip resolved; gitignore matched to scope.
 
 ---
 
@@ -317,7 +298,7 @@ Then print a short **Next**:
 ```text
 Next
 1. Contracts: docs/agents/* (done).
-2. Chat: /loop-workflows <or install hint if loop is missing>.
+2. Chat: /loop-workflows <or reviewed-install reminder if loop is missing>.
 3. Shell AFK: <host-entry, or skipped>.
 4. Planning (optional, separate): to-spec/to-tickets → ready-for-agent.
 ```

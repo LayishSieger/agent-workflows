@@ -31,7 +31,7 @@ Writes the **contracts** your agents rely on: policy they read (tracker, labels,
 bash ~/.agents/skills/host-workflows/scripts/host.sh -n 3  # several, unattended
 ```
 
-Either way it's the same **tick**: take a ready issue so other agents skip it (**claim**), implement it, open the PR and hand it back to a human (**publish**). The shell path runs one fresh agent per issue and needs a spawn command telling the host how to start your agent; `/init-workflows` offers to write one.
+Either way it's the same **tick**: take a ready issue so other agents skip it (**claim**), implement it, open the PR and hand it back to a human (**publish**). The shell path runs one fresh agent per issue and needs a shell-free spawn recipe telling the host how to start your agent; `/init-workflows` offers to write one.
 
 ## How it works
 
@@ -48,7 +48,7 @@ Agents that “keep going” tend to stuff many issues into one context, skip hu
 1. **Audits** a fixed checklist (concrete paths — not an “initialized” stamp)
 2. **Repairs** contracts + runtime (defaults write without a second confirm; never wipe `progress.md`; never overwrite non-empty policy without confirm)
 3. **Optional autonomy:** chat only, or shell AFK — with skill scope global (default) or product; install host+loop via CLI; no silent install
-4. **Smart spawn** (shell only): detect agent CLIs on PATH; write product `.agent-workflows/spawn` (always product-local)
+4. **Smart spawn** (shell only): detect agent CLIs on PATH; write a local, gitignored product `.agent-workflows/spawn` without credentials
 
 It does **not** implement issues, drain queues, or run `host.sh`. READY is contracts-only; loop/host/spawn are optional.
 
@@ -78,26 +78,25 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 | Flag | Meaning |
 |------|---------|
 | `-n N` | Max ticks (default **1**). No unbounded drain |
-| `--spawn CMD` | Override spawn command string |
+| `--spawn CMD` | Override the shell-free spawn recipe |
 | `--cwd DIR` | Product root (default: current directory) |
 
 **Spawn resolution** (first non-empty wins):
 
 ```text
---spawn / AGENT_SPAWN  >  product .agent-workflows/spawn  >  machine ~/.config/agent-workflows/spawn
+--spawn / AGENT_SPAWN  >  local product .agent-workflows/spawn  >  machine ~/.config/agent-workflows/spawn
 ```
 
-All missing → **HARD STOP** (no silent default binary). Host injects the tick prompt into the spawn recipe: if the line contains `{{PROMPT}}`, replace it (quoted); else append as the final argument. Never adds `--continue` / `--resume`.
+All missing → **HARD STOP** (no silent default binary). Host parses whitespace-separated argv and executes the binary directly—never through `eval` or a command shell. A standalone `{{PROMPT}}` argument is replaced; otherwise the prompt is appended. Shell syntax, interpreter/wrapper commands, and product spawn files that are tracked, symlinked, or outside a valid git worktree are rejected. Never adds `--continue` / `--resume`.
 
-Spawn is **human-owned** config (flag, env, or one-line file). Skills do not ship unattended/trust flags. Example one-liners (adjust for your agent version):
+Spawn is **human-owned** config (flag, env, or one-line file). Recipe contents are never printed. Keep credentials in the CLI environment or credential store, and choose the minimum unattended permissions supported by your agent. Example shell-free shapes:
 
 ```bash
 # product or machine file — one line only
 # Grok: -p requires the prompt as its value → use {{PROMPT}}
-grok -p {{PROMPT}} --always-approve --output-format plain
-# cursor-agent -p --force --trust --output-format text
-# Claude AFK: acceptEdits blocks Bash/gh — use bypassPermissions for shell host
-# claude -p {{PROMPT}} --permission-mode bypassPermissions --output-format text
+grok -p {{PROMPT}} --output-format plain
+# cursor-agent -p --output-format text
+# claude -p {{PROMPT}} --output-format text
 # codex exec --sandbox workspace-write --ephemeral
 ```
 
@@ -110,7 +109,7 @@ Workers must have **`loop-workflows`** installed for the agent binary you spawn.
 | `docs/agents/` | Policy (tracker ops, triage labels, domain) — reviewable in git |
 | `.agent-workflows/progress.md` | Session log; hosts key off latest **`outcome:`** |
 | `.agent-workflows/logs/` | Optional per-run notes |
-| `.agent-workflows/spawn` | Optional one-line shell command string |
+| `.agent-workflows/spawn` | Optional local, gitignored shell-free argv recipe |
 
 **No** full `.agent-workflows/config` in 0.3. Integration branch (if not the repo default) lives in **`docs/agents/issue-tracker.md`**.
 

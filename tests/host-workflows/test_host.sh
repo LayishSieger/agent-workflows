@@ -38,6 +38,18 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local name="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    echo "  PASS: $name"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $name (unexpected $(printf %q "$needle"))"
+    echo "        got: $(printf %q "$haystack")"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 assert_file_exists() {
   local name="$1" path="$2"
   if [[ -x "$path" || -f "$path" ]]; then
@@ -197,6 +209,7 @@ echo "== spawn resolution =="
 # product file wins over machine
 {
   setup_case COMPLETE
+  git -C "$product" init -q
   mkdir -p "$HOME/.config/agent-workflows"
   echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
   echo "$FAKE" >"$product/.agent-workflows/spawn"
@@ -214,6 +227,26 @@ echo "== spawn resolution =="
   teardown_case
 }
 
+# Product files require git metadata so unpacked source cannot supply executable config.
+{
+  setup_case
+  echo "$FAKE" >"$product/.agent-workflows/spawn"
+  set +e
+  out="$(run_host "$product" -n 1 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "non-git product spawn rejected" "1" "$ec"
+  assert_contains "non-git product spawn explains refusal" "without a git worktree" "$out"
+  if [[ -s "$log" ]]; then
+    echo "  FAIL: non-git product spawn must not execute"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: non-git product spawn did not execute"
+    PASS=$((PASS + 1))
+  fi
+  teardown_case
+}
+
 # machine file used when product missing
 {
   setup_case COMPLETE
@@ -223,6 +256,77 @@ echo "== spawn resolution =="
   out="$(run_host "$product" -n 1 2>&1)"
   set -e
   assert_contains "machine spawn used fake" "argc=" "$(cat "$log")"
+  teardown_case
+}
+
+# A tracked product spawn file is repository-controlled and must never execute.
+{
+  setup_case COMPLETE
+  (
+    cd "$product"
+    git init -q
+    git add .agent-workflows/progress.md
+    echo "$FAKE" >.agent-workflows/spawn
+    git add -f .agent-workflows/spawn
+  )
+  set +e
+  out="$(run_host "$product" -n 1 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "tracked product spawn rejected" "1" "$ec"
+  assert_contains "tracked product spawn explains refusal" "refusing tracked product spawn file" "$out"
+  if [[ -s "$log" ]]; then
+    echo "  FAIL: tracked product spawn must not execute"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: tracked product spawn did not execute"
+    PASS=$((PASS + 1))
+  fi
+  teardown_case
+}
+
+# Spawn contents are configuration and may contain sensitive values; never print them.
+{
+  setup_case COMPLETE
+  set +e
+  out="$(run_host "$product" -n 1 --spawn "$FAKE --opaque-value" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "redacted spawn still runs" "0" "$ec"
+  assert_not_contains "spawn recipe redacted from output" "--opaque-value" "$out"
+  assert_contains "spawn output reports redaction" "contents redacted" "$out"
+  teardown_case
+}
+
+# Shell operators must be passed as neither syntax nor executable side effects.
+{
+  setup_case
+  marker="$product/should-not-exist"
+  set +e
+  out="$(run_host "$product" -n 1 --spawn "$FAKE; touch $marker" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "shell chaining rejected" "1" "$ec"
+  assert_contains "shell chaining has clear error" "unsafe spawn recipe" "$out"
+  if [[ -e "$marker" ]]; then
+    echo "  FAIL: rejected shell syntax created marker"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: rejected shell syntax had no side effect"
+    PASS=$((PASS + 1))
+  fi
+  teardown_case
+}
+
+# Interpreter wrappers restore shell evaluation even without metacharacters and are rejected.
+{
+  setup_case
+  set +e
+  out="$(run_host "$product" -n 1 --spawn "bash -c id" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "shell interpreter rejected" "1" "$ec"
+  assert_contains "shell interpreter has clear error" "command interpreters" "$out"
   teardown_case
 }
 
