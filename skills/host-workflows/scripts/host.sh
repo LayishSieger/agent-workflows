@@ -105,6 +105,12 @@ resolve_spawn() {
   local product_file machine_file
   product_file="$product_root/.agent-workflows/spawn"
   machine_file="${HOME:-}/.config/agent-workflows/spawn"
+  # Symlinks (incl. dangling) must refuse — never fall through to machine config.
+  if [[ -L "$product_file" ]]; then
+    err "host-workflows: refusing symlinked product spawn file: $product_file"
+    err "  Spawn configuration must be a local regular file; use --spawn or AGENT_SPAWN instead."
+    return 1
+  fi
   if [[ -f "$product_file" ]]; then
     if ! git -C "$product_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       err "host-workflows: refusing product spawn file without a git worktree: $product_file"

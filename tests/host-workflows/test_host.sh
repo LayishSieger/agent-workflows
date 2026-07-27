@@ -285,6 +285,33 @@ echo "== spawn resolution =="
   teardown_case
 }
 
+# A symlinked product spawn must refuse — never fall through to machine config.
+{
+  setup_case COMPLETE
+  mkdir -p "$HOME/.config/agent-workflows"
+  echo "$FAKE" >"$HOME/.config/agent-workflows/spawn"
+  (
+    cd "$product"
+    git init -q
+    echo "$FAKE" >.agent-workflows/spawn.target
+    ln -s spawn.target .agent-workflows/spawn
+  )
+  set +e
+  out="$(run_host "$product" -n 1 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "symlinked product spawn rejected" "1" "$ec"
+  assert_contains "symlinked product spawn explains refusal" "refusing symlinked product spawn file" "$out"
+  if [[ -s "$log" ]]; then
+    echo "  FAIL: symlinked product spawn must not execute (incl. via machine fallback)"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: symlinked product spawn did not execute"
+    PASS=$((PASS + 1))
+  fi
+  teardown_case
+}
+
 # Spawn contents are configuration and may contain sensitive values; never print them.
 {
   setup_case COMPLETE
