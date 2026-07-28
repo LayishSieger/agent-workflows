@@ -38,6 +38,18 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local name="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    echo "  PASS: $name"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $name (unexpected $(printf %q "$needle"))"
+    echo "        got: $(printf %q "$haystack")"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 assert_file_exists() {
   local name="$1" path="$2"
   if [[ -x "$path" || -f "$path" ]]; then
@@ -135,6 +147,27 @@ write_decoy_spawns() {
   echo "product-should-not-run" >"$product/.agent-workflows/spawn"
 }
 
+# assert_spawn_rejected <name> <error-substring> [host-args...]
+# Expects exit 1, stderr/stdout contains substring, and spawn log stays empty.
+assert_spawn_rejected() {
+  local name="$1" needle="$2"
+  shift 2
+  local out ec
+  set +e
+  out="$(run_host "$product" -n 1 "$@" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "${name} rejected" "1" "$ec"
+  assert_contains "${name} explains refusal" "$needle" "$out"
+  if [[ -n "${log:-}" && -s "$log" ]]; then
+    echo "  FAIL: ${name} must not execute"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: ${name} did not execute"
+    PASS=$((PASS + 1))
+  fi
+}
+
 # --- spawn resolution ---
 echo "== spawn resolution =="
 
@@ -197,6 +230,7 @@ echo "== spawn resolution =="
 # product file wins over machine
 {
   setup_case COMPLETE
+  git -C "$product" init -q
   mkdir -p "$HOME/.config/agent-workflows"
   echo "machine-should-not-run" >"$HOME/.config/agent-workflows/spawn"
   echo "$FAKE" >"$product/.agent-workflows/spawn"
@@ -214,6 +248,14 @@ echo "== spawn resolution =="
   teardown_case
 }
 
+# Product files require git metadata so unpacked source cannot supply executable config.
+{
+  setup_case
+  echo "$FAKE" >"$product/.agent-workflows/spawn"
+  assert_spawn_rejected "non-git product spawn" "without a git worktree"
+  teardown_case
+}
+
 # machine file used when product missing
 {
   setup_case COMPLETE
@@ -223,6 +265,70 @@ echo "== spawn resolution =="
   out="$(run_host "$product" -n 1 2>&1)"
   set -e
   assert_contains "machine spawn used fake" "argc=" "$(cat "$log")"
+  teardown_case
+}
+
+# A tracked product spawn file is repository-controlled and must never execute.
+{
+  setup_case COMPLETE
+  (
+    cd "$product"
+    git init -q
+    git add .agent-workflows/progress.md
+    echo "$FAKE" >.agent-workflows/spawn
+    git add -f .agent-workflows/spawn
+  )
+  assert_spawn_rejected "tracked product spawn" "refusing tracked product spawn file"
+  teardown_case
+}
+
+# A symlinked product spawn must refuse — never fall through to machine config.
+{
+  setup_case COMPLETE
+  mkdir -p "$HOME/.config/agent-workflows"
+  echo "$FAKE" >"$HOME/.config/agent-workflows/spawn"
+  (
+    cd "$product"
+    git init -q
+    echo "$FAKE" >.agent-workflows/spawn.target
+    ln -s spawn.target .agent-workflows/spawn
+  )
+  assert_spawn_rejected "symlinked product spawn" "refusing symlinked product spawn file"
+  teardown_case
+}
+
+# Spawn contents are configuration and may contain sensitive values; never print them.
+{
+  setup_case COMPLETE
+  set +e
+  out="$(run_host "$product" -n 1 --spawn "$FAKE --opaque-value" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "redacted spawn still runs" "0" "$ec"
+  assert_not_contains "spawn recipe redacted from output" "--opaque-value" "$out"
+  assert_contains "spawn output reports redaction" "contents redacted" "$out"
+  teardown_case
+}
+
+# Shell operators must be passed as neither syntax nor executable side effects.
+{
+  setup_case
+  marker="$product/should-not-exist"
+  assert_spawn_rejected "shell chaining" "unsafe spawn recipe" --spawn "$FAKE; touch $marker"
+  if [[ -e "$marker" ]]; then
+    echo "  FAIL: rejected shell syntax created marker"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: rejected shell syntax had no side effect"
+    PASS=$((PASS + 1))
+  fi
+  teardown_case
+}
+
+# Interpreter wrappers restore shell evaluation even without metacharacters and are rejected.
+{
+  setup_case
+  assert_spawn_rejected "shell interpreter" "command interpreters" --spawn "bash -c id"
   teardown_case
 }
 

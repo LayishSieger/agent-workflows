@@ -37,7 +37,7 @@ bash /path/to/agent-workflows/skills/host-workflows/scripts/host.sh -n 3 --cwd /
 | Flag | Meaning |
 |------|---------|
 | `-n N` | Max ticks (default **1**). No unbounded drain. |
-| `--spawn CMD` | Override spawn command |
+| `--spawn CMD` | Override the shell-free spawn recipe |
 | `--cwd DIR` | Product root (default: cwd) |
 | `-h` / `--help` | Usage |
 
@@ -55,22 +55,25 @@ First non-empty wins:
 
 | Source | Shape |
 |--------|--------|
-| `--spawn '…'` | Full command string |
-| `AGENT_SPAWN` | Full command string |
-| `.agent-workflows/spawn` | One line = command string |
-| `~/.config/agent-workflows/spawn` | One line = command string |
+| `--spawn '…'` | Human-supplied shell-free argv recipe |
+| `AGENT_SPAWN` | Human-supplied shell-free argv recipe |
+| `.agent-workflows/spawn` | One local, untracked line |
+| `~/.config/agent-workflows/spawn` | One local machine-config line |
 
 **All missing → HARD STOP** with a clear error. There is **no** universal default binary (avoids PATH collisions such as bare `agent`).
 
-Host runs:
+The host parses the recipe into arguments and invokes the executable directly, without `eval`, `bash -c`, or another command shell:
 
 ```text
-$SPAWN "<tick prompt>"
+spawn-argv... "<tick prompt>"
 ```
 
 - Tick prompt injection:
-  - If the recipe contains `{{PROMPT}}`, replace it (shell-quoted). Use when the CLI needs the prompt as a **flag value** (e.g. `grok -p {{PROMPT}} …`).
+  - If a standalone argument is `{{PROMPT}}`, replace it. Use when the CLI needs the prompt as a **flag value** (e.g. `grok -p {{PROMPT}} …`).
   - Else append the prompt as the **final** CLI argument.
+- Recipes are whitespace-separated argv. Shell quoting, substitutions, redirects, pipes, command chaining, embedded/newline commands, command interpreters, and environment wrappers are rejected.
+- A product spawn file must be local and gitignored in a valid git worktree. The host refuses a tracked file, symlink, or product file without verifiable git metadata so a cloned or unpacked repository cannot supply executable configuration.
+- Never print or reveal a resolved recipe; status reports only that one is configured. Keep credentials in the spawned CLI's environment or credential store, never inline in a recipe.
 - Host **never** adds `--continue` / `--resume` (clean one-shot context).
 - Any unattended flags belong in the **human-owned** spawn string (flag / env / spawn file), not in this skill.
 

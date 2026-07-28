@@ -7,8 +7,9 @@
 #   host.sh [-n N] [--spawn CMD] [--cwd DIR] [-h|--help]
 #
 # Spawn resolution (first wins):
-#   --spawn | AGENT_SPAWN  >  product .agent-workflows/spawn  >  machine ~/.config/agent-workflows/spawn
+#   --spawn | AGENT_SPAWN  >  local product .agent-workflows/spawn  >  machine ~/.config/agent-workflows/spawn
 # All missing → HARD STOP (no silent default binary).
+# Spawn recipes are parsed as argv and executed directly; shell syntax is rejected.
 #
 # Control plane: latest progress `outcome:` + stop rules. Process exit ≠ tick success.
 set -euo pipefail
@@ -27,23 +28,25 @@ Usage:
 
 Options:
   -n N           Maximum ticks to schedule (default: 1). No unbounded drain.
-  --spawn CMD    Spawn command string (wins over env and spawn files).
+  --spawn CMD    Shell-free command recipe (wins over env and spawn files).
   --cwd DIR      Product root (default: current directory). Host cds here before spawn.
   -h, --help     Show this help.
 
 Environment:
-  AGENT_SPAWN    Spawn command string if --spawn is not set.
+  AGENT_SPAWN    Shell-free command recipe if --spawn is not set.
 
 Spawn resolution (first non-empty wins):
   1. --spawn
   2. AGENT_SPAWN
-  3. <product>/.agent-workflows/spawn   (one line)
+  3. <product>/.agent-workflows/spawn   (one local, untracked line)
   4. ~/.config/agent-workflows/spawn    (one line)
 
 If all are missing → HARD STOP (clear error; no default agent binary).
 
 The host injects the tick prompt into the spawn recipe:
-  - If recipe contains {{PROMPT}}, replace it (quoted). Example: grok -p {{PROMPT}} --output-format plain
+  - Recipes are whitespace-separated argv, not shell programs. Quotes, substitutions,
+    redirects, pipes, and command chaining are rejected.
+  - If a standalone argument is {{PROMPT}}, replace it. Example: grok -p {{PROMPT}} --output-format plain
   - Else append prompt as the final CLI argument.
   - Host never adds --continue / --resume (clean one-shot context).
   - Unattended/trust flags belong in the human-owned spawn string only (see hub README examples).
@@ -75,6 +78,7 @@ OUTCOME_CONTINUE='SHIPPED|NEEDS_INFO|SKIPPED'
 read_spawn_file() {
   local path="$1"
   [[ -f "$path" && -r "$path" ]] || return 1
+  [[ ! -L "$path" ]] || return 1
   local line
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line//$'\r'/}"
@@ -86,6 +90,30 @@ read_spawn_file() {
     return 0
   done <"$path"
   return 1
+}
+
+# Refuse product spawn paths that must never become executable config.
+# Returns 0 when absent or acceptable; 1 after printing a clear refusal.
+validate_product_spawn_file() {
+  local product_root="$1" product_file="$2"
+  # Symlinks (incl. dangling) must refuse — never fall through to machine config.
+  if [[ -L "$product_file" ]]; then
+    err "host-workflows: refusing symlinked product spawn file: $product_file"
+    err "  Spawn configuration must be a local regular file; use --spawn or AGENT_SPAWN instead."
+    return 1
+  fi
+  [[ -f "$product_file" ]] || return 0
+  if ! git -C "$product_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    err "host-workflows: refusing product spawn file without a git worktree: $product_file"
+    err "  Use --spawn, AGENT_SPAWN, or local machine config instead."
+    return 1
+  fi
+  if git -C "$product_root" ls-files --error-unmatch -- ".agent-workflows/spawn" >/dev/null 2>&1; then
+    err "host-workflows: refusing tracked product spawn file: $product_file"
+    err "  Spawn configuration must be local and gitignored; use --spawn or AGENT_SPAWN instead."
+    return 1
+  fi
+  return 0
 }
 
 resolve_spawn() {
@@ -101,6 +129,7 @@ resolve_spawn() {
   local product_file machine_file
   product_file="$product_root/.agent-workflows/spawn"
   machine_file="${HOME:-}/.config/agent-workflows/spawn"
+  validate_product_spawn_file "$product_root" "$product_file" || return 1
   if out="$(read_spawn_file "$product_file")"; then
     printf '%s\n' "$out"
     return 0
@@ -179,20 +208,65 @@ host-workflows status
 EOF
 }
 
-# Run spawn with tick prompt. {{PROMPT}} → quoted substitution; else final argv.
+# Run a shell-free spawn recipe with the tick prompt.
+# The recipe is intentionally limited to whitespace-separated argv. This avoids evaluating
+# repository-controlled shell syntax while retaining the common agent CLI forms.
 run_spawn() {
   local spawn_cmd="$1"
   local prompt="$2"
-  if [[ "$spawn_cmd" == *'{{PROMPT}}'* ]]; then
-    local quoted
-    quoted="$(printf '%q' "$prompt")"
-    spawn_cmd="${spawn_cmd//\{\{PROMPT\}\}/$quoted}"
-    # shellcheck disable=SC2086
-    bash -c "$spawn_cmd"
-  else
-    # shellcheck disable=SC2086
-    bash -c "$spawn_cmd \"\$1\"" _ "$prompt"
+  local without_prompt="${spawn_cmd//\{\{PROMPT\}\}/}"
+
+  if [[ "$spawn_cmd" == *$'\n'* || "$spawn_cmd" == *$'\r'* ]]; then
+    err "host-workflows: unsafe spawn recipe — newlines are not allowed"
+    return 1
   fi
+  case "$without_prompt" in
+    *[\;\&\|\<\>\`\$\\\"\']*)
+      err "host-workflows: unsafe spawn recipe — shell syntax and quoting are not allowed"
+      return 1
+      ;;
+  esac
+
+  local argv=()
+  read -r -a argv <<<"$spawn_cmd"
+  if [[ "${#argv[@]}" -eq 0 ]]; then
+    err "host-workflows: unsafe spawn recipe — command is empty"
+    return 1
+  fi
+
+  local found_prompt=0 i
+  for ((i = 0; i < ${#argv[@]}; i++)); do
+    if [[ "${argv[$i]}" == "{{PROMPT}}" ]]; then
+      argv[$i]="$prompt"
+      found_prompt=1
+    elif [[ "${argv[$i]}" == *'{{PROMPT}}'* ]]; then
+      err "host-workflows: unsafe spawn recipe — {{PROMPT}} must be a standalone argument"
+      return 1
+    fi
+  done
+  if [[ "$found_prompt" -eq 0 ]]; then
+    argv+=("$prompt")
+  fi
+
+  if [[ "${argv[0]}" == */* ]]; then
+    [[ -x "${argv[0]}" && ! -d "${argv[0]}" ]] || {
+      err "host-workflows: spawn executable is not executable: ${argv[0]}"
+      return 1
+    }
+  elif ! command -v "${argv[0]}" >/dev/null 2>&1; then
+    err "host-workflows: spawn executable not found on PATH: ${argv[0]}"
+    return 1
+  fi
+
+  local executable_name="${argv[0]##*/}"
+  case "$executable_name" in
+    sh|bash|dash|zsh|ksh|csh|tcsh|fish|env|python|python[0-9]*|node|bun|deno|ruby|perl|php|osascript)
+      err "host-workflows: unsafe spawn recipe — command interpreters and wrappers are not allowed"
+      return 1
+      ;;
+  esac
+
+  "${argv[@]}"
 }
 
 main() {
@@ -268,7 +342,7 @@ main() {
   log "host-workflows $HOST_VERSION"
   log "- product: $product_root"
   log "- max: $max_n"
-  log "- spawn: $spawn_cmd"
+  log "- spawn: configured (contents redacted)"
   log "- progress: $progress"
 
   while [[ "$ticks" -lt "$max_n" ]]; do

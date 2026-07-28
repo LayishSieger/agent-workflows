@@ -1,1 +1,1 @@
-grok -p {{PROMPT}} --always-approve --output-format plain
+grok -p {{PROMPT}} --output-format plain
