@@ -147,6 +147,27 @@ write_decoy_spawns() {
   echo "product-should-not-run" >"$product/.agent-workflows/spawn"
 }
 
+# assert_spawn_rejected <name> <error-substring> [host-args...]
+# Expects exit 1, stderr/stdout contains substring, and spawn log stays empty.
+assert_spawn_rejected() {
+  local name="$1" needle="$2"
+  shift 2
+  local out ec
+  set +e
+  out="$(run_host "$product" -n 1 "$@" 2>&1)"
+  ec=$?
+  set -e
+  assert_eq "${name} rejected" "1" "$ec"
+  assert_contains "${name} explains refusal" "$needle" "$out"
+  if [[ -n "${log:-}" && -s "$log" ]]; then
+    echo "  FAIL: ${name} must not execute"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: ${name} did not execute"
+    PASS=$((PASS + 1))
+  fi
+}
+
 # --- spawn resolution ---
 echo "== spawn resolution =="
 
@@ -231,19 +252,7 @@ echo "== spawn resolution =="
 {
   setup_case
   echo "$FAKE" >"$product/.agent-workflows/spawn"
-  set +e
-  out="$(run_host "$product" -n 1 2>&1)"
-  ec=$?
-  set -e
-  assert_eq "non-git product spawn rejected" "1" "$ec"
-  assert_contains "non-git product spawn explains refusal" "without a git worktree" "$out"
-  if [[ -s "$log" ]]; then
-    echo "  FAIL: non-git product spawn must not execute"
-    FAIL=$((FAIL + 1))
-  else
-    echo "  PASS: non-git product spawn did not execute"
-    PASS=$((PASS + 1))
-  fi
+  assert_spawn_rejected "non-git product spawn" "without a git worktree"
   teardown_case
 }
 
@@ -269,19 +278,7 @@ echo "== spawn resolution =="
     echo "$FAKE" >.agent-workflows/spawn
     git add -f .agent-workflows/spawn
   )
-  set +e
-  out="$(run_host "$product" -n 1 2>&1)"
-  ec=$?
-  set -e
-  assert_eq "tracked product spawn rejected" "1" "$ec"
-  assert_contains "tracked product spawn explains refusal" "refusing tracked product spawn file" "$out"
-  if [[ -s "$log" ]]; then
-    echo "  FAIL: tracked product spawn must not execute"
-    FAIL=$((FAIL + 1))
-  else
-    echo "  PASS: tracked product spawn did not execute"
-    PASS=$((PASS + 1))
-  fi
+  assert_spawn_rejected "tracked product spawn" "refusing tracked product spawn file"
   teardown_case
 }
 
@@ -296,19 +293,7 @@ echo "== spawn resolution =="
     echo "$FAKE" >.agent-workflows/spawn.target
     ln -s spawn.target .agent-workflows/spawn
   )
-  set +e
-  out="$(run_host "$product" -n 1 2>&1)"
-  ec=$?
-  set -e
-  assert_eq "symlinked product spawn rejected" "1" "$ec"
-  assert_contains "symlinked product spawn explains refusal" "refusing symlinked product spawn file" "$out"
-  if [[ -s "$log" ]]; then
-    echo "  FAIL: symlinked product spawn must not execute (incl. via machine fallback)"
-    FAIL=$((FAIL + 1))
-  else
-    echo "  PASS: symlinked product spawn did not execute"
-    PASS=$((PASS + 1))
-  fi
+  assert_spawn_rejected "symlinked product spawn" "refusing symlinked product spawn file"
   teardown_case
 }
 
@@ -329,12 +314,7 @@ echo "== spawn resolution =="
 {
   setup_case
   marker="$product/should-not-exist"
-  set +e
-  out="$(run_host "$product" -n 1 --spawn "$FAKE; touch $marker" 2>&1)"
-  ec=$?
-  set -e
-  assert_eq "shell chaining rejected" "1" "$ec"
-  assert_contains "shell chaining has clear error" "unsafe spawn recipe" "$out"
+  assert_spawn_rejected "shell chaining" "unsafe spawn recipe" --spawn "$FAKE; touch $marker"
   if [[ -e "$marker" ]]; then
     echo "  FAIL: rejected shell syntax created marker"
     FAIL=$((FAIL + 1))
@@ -348,12 +328,7 @@ echo "== spawn resolution =="
 # Interpreter wrappers restore shell evaluation even without metacharacters and are rejected.
 {
   setup_case
-  set +e
-  out="$(run_host "$product" -n 1 --spawn "bash -c id" 2>&1)"
-  ec=$?
-  set -e
-  assert_eq "shell interpreter rejected" "1" "$ec"
-  assert_contains "shell interpreter has clear error" "command interpreters" "$out"
+  assert_spawn_rejected "shell interpreter" "command interpreters" --spawn "bash -c id"
   teardown_case
 }
 

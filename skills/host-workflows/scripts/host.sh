@@ -92,6 +92,30 @@ read_spawn_file() {
   return 1
 }
 
+# Refuse product spawn paths that must never become executable config.
+# Returns 0 when absent or acceptable; 1 after printing a clear refusal.
+validate_product_spawn_file() {
+  local product_root="$1" product_file="$2"
+  # Symlinks (incl. dangling) must refuse — never fall through to machine config.
+  if [[ -L "$product_file" ]]; then
+    err "host-workflows: refusing symlinked product spawn file: $product_file"
+    err "  Spawn configuration must be a local regular file; use --spawn or AGENT_SPAWN instead."
+    return 1
+  fi
+  [[ -f "$product_file" ]] || return 0
+  if ! git -C "$product_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    err "host-workflows: refusing product spawn file without a git worktree: $product_file"
+    err "  Use --spawn, AGENT_SPAWN, or local machine config instead."
+    return 1
+  fi
+  if git -C "$product_root" ls-files --error-unmatch -- ".agent-workflows/spawn" >/dev/null 2>&1; then
+    err "host-workflows: refusing tracked product spawn file: $product_file"
+    err "  Spawn configuration must be local and gitignored; use --spawn or AGENT_SPAWN instead."
+    return 1
+  fi
+  return 0
+}
+
 resolve_spawn() {
   local flag_spawn="$1" product_root="$2"
   if [[ -n "$flag_spawn" ]]; then
@@ -105,24 +129,7 @@ resolve_spawn() {
   local product_file machine_file
   product_file="$product_root/.agent-workflows/spawn"
   machine_file="${HOME:-}/.config/agent-workflows/spawn"
-  # Symlinks (incl. dangling) must refuse — never fall through to machine config.
-  if [[ -L "$product_file" ]]; then
-    err "host-workflows: refusing symlinked product spawn file: $product_file"
-    err "  Spawn configuration must be a local regular file; use --spawn or AGENT_SPAWN instead."
-    return 1
-  fi
-  if [[ -f "$product_file" ]]; then
-    if ! git -C "$product_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      err "host-workflows: refusing product spawn file without a git worktree: $product_file"
-      err "  Use --spawn, AGENT_SPAWN, or local machine config instead."
-      return 1
-    fi
-    if git -C "$product_root" ls-files --error-unmatch -- ".agent-workflows/spawn" >/dev/null 2>&1; then
-      err "host-workflows: refusing tracked product spawn file: $product_file"
-      err "  Spawn configuration must be local and gitignored; use --spawn or AGENT_SPAWN instead."
-      return 1
-    fi
-  fi
+  validate_product_spawn_file "$product_root" "$product_file" || return 1
   if out="$(read_spawn_file "$product_file")"; then
     printf '%s\n' "$out"
     return 0
